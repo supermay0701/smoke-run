@@ -1,0 +1,178 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "菸槍快跑排行榜 API",
+    "version": "1.0.0",
+    "description": "供 GitHub Pages 上的菸槍快跑遊戲讀取排行榜及提交玩家最高分。"
+  },
+  "servers": [
+    { "url": "http://127.0.0.1:8787", "description": "本機 Wrangler" }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "服務健康檢查",
+        "responses": {
+          "200": {
+            "description": "服務正常",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Health" } } }
+          }
+        }
+      }
+    },
+    "/api/leaderboard": {
+      "get": {
+        "summary": "取得排行榜",
+        "parameters": [
+          {
+            "name": "board",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "enum": ["easy", "normal", "hard", "ach"] }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 50, "default": 15 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "依分數或成就數由高至低排列",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Leaderboard" } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/api/player": {
+      "post": {
+        "summary": "更新玩家暱稱與成就數",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PlayerInput" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "更新完成",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Ok" } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/api/scores": {
+      "post": {
+        "summary": "提交單一難度的最高分",
+        "description": "同一玩家與難度只保留最高分，回傳目前最佳分數與名次。",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ScoreInput" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "分數已處理",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ScoreResult" } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "429": {
+            "description": "一分鐘內提交超過 6 次",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "responses": {
+      "BadRequest": {
+        "description": "輸入資料格式錯誤",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      }
+    },
+    "schemas": {
+      "Health": {
+        "type": "object",
+        "required": ["ok", "service"],
+        "properties": {
+          "ok": { "type": "boolean", "const": true },
+          "service": { "type": "string", "const": "smoke-run-api" }
+        }
+      },
+      "Ok": {
+        "type": "object",
+        "required": ["ok"],
+        "properties": { "ok": { "type": "boolean", "const": true } }
+      },
+      "PlayerInput": {
+        "type": "object",
+        "required": ["playerId", "name", "ach"],
+        "properties": {
+          "playerId": { "type": "string", "format": "uuid" },
+          "name": { "type": "string", "minLength": 1, "maxLength": 12 },
+          "ach": { "type": "integer", "minimum": 0, "maximum": 200 }
+        }
+      },
+      "ScoreInput": {
+        "allOf": [
+          { "$ref": "#/components/schemas/PlayerInput" },
+          {
+            "type": "object",
+            "required": ["diff", "score", "survive", "cigs"],
+            "properties": {
+              "diff": { "type": "string", "enum": ["easy", "normal", "hard"] },
+              "score": { "type": "integer", "minimum": 0, "maximum": 216300 },
+              "survive": { "type": "integer", "minimum": 0, "maximum": 3600 },
+              "cigs": { "type": "integer", "minimum": 0, "maximum": 10000 }
+            }
+          }
+        ]
+      },
+      "ScoreResult": {
+        "type": "object",
+        "required": ["best", "rank"],
+        "properties": {
+          "best": { "type": "integer", "minimum": 0 },
+          "rank": { "type": "integer", "minimum": 1 }
+        }
+      },
+      "Leaderboard": {
+        "type": "object",
+        "required": ["board", "rows"],
+        "properties": {
+          "board": { "type": "string", "enum": ["easy", "normal", "hard", "ach"] },
+          "rows": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "required": ["name"],
+              "properties": {
+                "name": { "type": "string" },
+                "score": { "type": "integer" },
+                "survive": { "type": "integer" },
+                "ach": { "type": "integer" }
+              }
+            }
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": {
+              "code": { "type": "string" },
+              "message": { "type": "string" },
+              "details": { "type": "object" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "smoke-run-api",
+	"main": "src/index.js",
+	"compatibility_date": "2026-10-21",
+	"workers_dev": true,
+	"observability": {
+		"enabled": true
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "smoke-run-db",
+			"database_id": "c64a773b-e876-4185-8c2e-200d8e6d6301",
+			"migrations_dir": "migrations"
+		}
+	],
+	"ratelimits": [
+		{
+			"name": "SCORE_LIMITER",
+			"namespace_id": "1001",
+			"simple": {
+				"limit": 6,
+				"period": 60
+			}
+		}
+	]
+}

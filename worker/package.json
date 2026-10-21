@@ -1,0 +1,19 @@
+{
+  "name": "smoke-run-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check src/index.js && node -e \"JSON.parse(require('fs').readFileSync('openapi.json','utf8')); console.log('OpenAPI JSON OK')\"",
+    "test:api": "node test/api.mjs",
+    "dev": "wrangler dev --port 8787",
+    "deploy": "wrangler deploy",
+    "db:create": "wrangler d1 create smoke-run-db",
+    "db:migrate:local": "wrangler d1 migrations apply smoke-run-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply smoke-run-db --remote"
+  },
+  "devDependencies": {
+    "wrangler": "^4.36.0"
+  }
+}
+

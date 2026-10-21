@@ -11,12 +11,13 @@
 - 菸品下方的 ● 越多越傷肺
 - 🏥 醫院可以治療肺部，但要花錢
 - 😇 碰到董氏基金會會暫時「懂事」
-- 三種難度：小菸槍、老菸槍、菸蟲
+- 💰 身家會改變角色造型：低於 $500 會穿破衣、招來蒼蠅；$20,000 換西裝、$50,000 戴金鍊墨鏡、$100,000 開跑車
+- 三種難度有不同的開局尼古丁：小菸槍 100%、老菸槍 50%、菸蟲 0%
 
 ## 技術
 單一 `index.html`，純 HTML5 Canvas + JavaScript，不需要任何安裝或建置。
 
-排行榜使用 Supabase，設定方式見 [`supabase/README.md`](supabase/README.md)。
+排行榜使用 Cloudflare Worker + D1，API 為 <https://smoke-run-api.smoke-run-level-api.workers.dev>；遊戲頁仍部署在 GitHub Pages。維護方式見 [`worker/README.md`](worker/README.md)。
 
 ---
 
