@@ -16,6 +16,8 @@
 ## 技術
 單一 `index.html`，純 HTML5 Canvas + JavaScript，不需要任何安裝或建置。
 
+排行榜使用 Supabase，設定方式見 [`supabase/README.md`](supabase/README.md)。
+
 ---
 
 吸菸有害健康，本遊戲純屬反諷。想真的戒菸？免費戒菸專線 **0800-636363**
