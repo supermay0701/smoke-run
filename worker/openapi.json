@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "菸槍快跑排行榜 API",
-    "version": "1.0.0",
-    "description": "供 GitHub Pages 上的菸槍快跑遊戲讀取排行榜及提交玩家最高分。"
+    "version": "1.1.0",
+    "description": "供 GitHub Pages 上的菸槍快跑遊戲讀取角色排行榜、成就積分榜及提交玩家最高分。"
   },
   "servers": [
     { "url": "http://127.0.0.1:8787", "description": "本機 Wrangler" }
@@ -35,11 +35,18 @@
             "in": "query",
             "required": false,
             "schema": { "type": "integer", "minimum": 1, "maximum": 50, "default": 15 }
+          },
+          {
+            "name": "character",
+            "in": "query",
+            "required": false,
+            "description": "只套用於分數榜；all 會合併所有角色成績。",
+            "schema": { "type": "string", "enum": ["all", "young", "elder", "punk"], "default": "all" }
           }
         ],
         "responses": {
           "200": {
-            "description": "依分數或成就數由高至低排列",
+            "description": "依分數或加權成就積分由高至低排列",
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Leaderboard" } } }
           },
           "400": { "$ref": "#/components/responses/BadRequest" }
@@ -48,7 +55,7 @@
     },
     "/api/player": {
       "post": {
-        "summary": "更新玩家暱稱與成就數",
+        "summary": "更新玩家暱稱、成就數與加權積分",
         "requestBody": {
           "required": true,
           "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PlayerInput" } } }
@@ -64,8 +71,8 @@
     },
     "/api/scores": {
       "post": {
-        "summary": "提交單一難度的最高分",
-        "description": "同一玩家與難度只保留最高分，回傳目前最佳分數與名次。",
+        "summary": "提交單一難度與角色的最高分",
+        "description": "同一玩家、難度與角色只保留最高分，回傳該角色目前最佳分數與名次。未傳 character 的舊版客戶端視為 young。",
         "requestBody": {
           "required": true,
           "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ScoreInput" } } }
@@ -111,7 +118,9 @@
         "properties": {
           "playerId": { "type": "string", "format": "uuid" },
           "name": { "type": "string", "minLength": 1, "maxLength": 12 },
-          "ach": { "type": "integer", "minimum": 0, "maximum": 200 }
+          "ach": { "type": "integer", "minimum": 0, "maximum": 500, "description": "向舊版相容的成就數量欄位。" },
+          "achievementCount": { "type": "integer", "minimum": 0, "maximum": 500 },
+          "achievementPoints": { "type": "integer", "minimum": 0, "maximum": 50000, "description": "依成就等級加權後的排行積分；省略時暫以 ach 作為相容值。" }
         }
       },
       "ScoreInput": {
@@ -122,6 +131,7 @@
             "required": ["diff", "score", "survive", "cigs"],
             "properties": {
               "diff": { "type": "string", "enum": ["easy", "normal", "hard"] },
+              "character": { "type": "string", "enum": ["young", "elder", "punk"], "default": "young" },
               "score": { "type": "integer", "minimum": 0, "maximum": 216300 },
               "survive": { "type": "integer", "minimum": 0, "maximum": 3600 },
               "cigs": { "type": "integer", "minimum": 0, "maximum": 10000 }
@@ -131,10 +141,11 @@
       },
       "ScoreResult": {
         "type": "object",
-        "required": ["best", "rank"],
+        "required": ["best", "rank", "character"],
         "properties": {
           "best": { "type": "integer", "minimum": 0 },
-          "rank": { "type": "integer", "minimum": 1 }
+          "rank": { "type": "integer", "minimum": 1 },
+          "character": { "type": "string", "enum": ["young", "elder", "punk"] }
         }
       },
       "Leaderboard": {
@@ -142,6 +153,7 @@
         "required": ["board", "rows"],
         "properties": {
           "board": { "type": "string", "enum": ["easy", "normal", "hard", "ach"] },
+          "character": { "type": "string", "enum": ["all", "young", "elder", "punk"] },
           "rows": {
             "type": "array",
             "maxItems": 50,
@@ -152,7 +164,10 @@
                 "name": { "type": "string" },
                 "score": { "type": "integer" },
                 "survive": { "type": "integer" },
-                "ach": { "type": "integer" }
+                "character": { "type": "string", "enum": ["young", "elder", "punk"] },
+                "ach": { "type": "integer", "description": "向舊版相容的成就數量。" },
+                "achievementCount": { "type": "integer" },
+                "achievementPoints": { "type": "integer" }
               }
             }
           }

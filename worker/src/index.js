@@ -5,6 +5,7 @@ const ALLOWED_ORIGINS = new Set([
 ]);
 const DIFFICULTIES = new Set(['easy', 'normal', 'hard']);
 const BOARDS = new Set([...DIFFICULTIES, 'ach']);
+const CHARACTERS = new Set(['young', 'elder', 'punk']);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function corsHeaders(origin) {
@@ -42,9 +43,10 @@ function integer(value, min, max) {
 function validatePlayer(body) {
   const playerId = typeof body?.playerId === 'string' && UUID_RE.test(body.playerId) ? body.playerId : null;
   const name = cleanName(body?.name);
-  const ach = integer(body?.ach, 0, 200);
-  if (!playerId || !name || ach === null) return null;
-  return { playerId, name, ach };
+  const achievementCount = integer(body?.achievementCount ?? body?.ach, 0, 500);
+  const achievementPoints = integer(body?.achievementPoints ?? achievementCount, 0, 50000);
+  if (!playerId || !name || achievementCount === null || achievementPoints === null) return null;
+  return { playerId, name, achievementCount, achievementPoints };
 }
 
 function validateScore(body) {
@@ -53,9 +55,10 @@ function validateScore(body) {
   const score = integer(body?.score, 0, 216300);
   const survive = integer(body?.survive, 0, 3600);
   const cigs = integer(body?.cigs, 0, 10000);
-  if (!player || !diff || score === null || survive === null || cigs === null) return null;
+  const character = body?.character === undefined ? 'young' : (CHARACTERS.has(body.character) ? body.character : null);
+  if (!player || !diff || !character || score === null || survive === null || cigs === null) return null;
   if (score > (survive + 5) * 60) return null;
-  return { ...player, diff, score, survive, cigs };
+  return { ...player, diff, score, survive, cigs, character };
 }
 
 async function readBody(request, origin) {
@@ -71,13 +74,47 @@ async function readBody(request, origin) {
 async function leaderboard(env, url, origin) {
   const board = url.searchParams.get('board') || 'normal';
   const rawLimit = Number(url.searchParams.get('limit') || 15);
+  const character = url.searchParams.get('character') || 'all';
   const limit = Number.isInteger(rawLimit) ? Math.min(50, Math.max(1, rawLimit)) : 15;
   if (!BOARDS.has(board)) return fail('invalid_board', '排行榜類型錯誤', 400, origin);
+  if (board !== 'ach' && character !== 'all' && !CHARACTERS.has(character)) {
+    return fail('invalid_character', '角色篩選錯誤', 400, origin);
+  }
 
-  const result = board === 'ach'
-    ? await env.DB.prepare('SELECT name, ach FROM players WHERE ach > 0 ORDER BY ach DESC, updated_at ASC LIMIT ?1').bind(limit).all()
-    : await env.DB.prepare('SELECT name, score, survive FROM scores WHERE diff = ?1 ORDER BY score DESC, updated_at ASC LIMIT ?2').bind(board, limit).all();
-  return json({ board, rows: result.results || [] }, 200, origin, { 'Cache-Control': 'public, max-age=20' });
+  let result;
+  if (board === 'ach') {
+    result = await env.DB.prepare(`
+      SELECT name, ach, ach AS achievementCount, achievement_points AS achievementPoints
+      FROM players WHERE achievement_points > 0
+      ORDER BY achievement_points DESC, ach DESC, updated_at ASC LIMIT ?1
+    `).bind(limit).all();
+  } else if (character === 'all') {
+    result = await env.DB.prepare(`
+      SELECT name, score, survive, character FROM scores
+      WHERE diff = ?1 ORDER BY score DESC, updated_at ASC LIMIT ?2
+    `).bind(board, limit).all();
+  } else {
+    result = await env.DB.prepare(`
+      SELECT name, score, survive, character FROM scores
+      WHERE diff = ?1 AND character = ?2 ORDER BY score DESC, updated_at ASC LIMIT ?3
+    `).bind(board, character, limit).all();
+  }
+  return json({ board, ...(board === 'ach' ? {} : { character }), rows: result.results || [] }, 200, origin, { 'Cache-Control': 'public, max-age=20' });
+}
+
+function playerStatements(env, player) {
+  return [
+    env.DB.prepare(`
+      INSERT INTO players (id, name, ach, achievement_points, updated_at)
+      VALUES (?1, ?2, ?3, ?4, CURRENT_TIMESTAMP)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        ach = max(players.ach, excluded.ach),
+        achievement_points = max(players.achievement_points, excluded.achievement_points),
+        updated_at = CURRENT_TIMESTAMP
+    `).bind(player.playerId, player.name, player.achievementCount, player.achievementPoints),
+    env.DB.prepare('UPDATE scores SET name = ?1 WHERE player_id = ?2').bind(player.name, player.playerId),
+  ];
 }
 
 async function submitPlayer(env, request, origin) {
@@ -86,16 +123,7 @@ async function submitPlayer(env, request, origin) {
   const player = validatePlayer(parsed.body);
   if (!player) return fail('invalid_player', '玩家資料格式錯誤', 400, origin);
 
-  await env.DB.batch([
-    env.DB.prepare(`
-      INSERT INTO players (id, name, ach, updated_at) VALUES (?1, ?2, ?3, CURRENT_TIMESTAMP)
-      ON CONFLICT(id) DO UPDATE SET
-        name = excluded.name,
-        ach = max(players.ach, excluded.ach),
-        updated_at = CURRENT_TIMESTAMP
-    `).bind(player.playerId, player.name, player.ach),
-    env.DB.prepare('UPDATE scores SET name = ?1 WHERE player_id = ?2').bind(player.name, player.playerId),
-  ]);
+  await env.DB.batch(playerStatements(env, player));
   return json({ ok: true }, 200, origin);
 }
 
@@ -111,28 +139,24 @@ async function submitScore(env, request, origin) {
   }
 
   await env.DB.batch([
+    ...playerStatements(env, score),
     env.DB.prepare(`
-      INSERT INTO players (id, name, ach, updated_at) VALUES (?1, ?2, ?3, CURRENT_TIMESTAMP)
-      ON CONFLICT(id) DO UPDATE SET
-        name = excluded.name,
-        ach = max(players.ach, excluded.ach),
-        updated_at = CURRENT_TIMESTAMP
-    `).bind(score.playerId, score.name, score.ach),
-    env.DB.prepare(`
-      INSERT INTO scores (player_id, diff, name, score, survive, cigs, updated_at)
-      VALUES (?1, ?2, ?3, ?4, ?5, ?6, CURRENT_TIMESTAMP)
-      ON CONFLICT(player_id, diff) DO UPDATE SET
+      INSERT INTO scores (player_id, diff, character, name, score, survive, cigs, updated_at)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, CURRENT_TIMESTAMP)
+      ON CONFLICT(player_id, diff, character) DO UPDATE SET
         name = excluded.name,
         survive = CASE WHEN excluded.score > scores.score THEN excluded.survive ELSE scores.survive END,
         cigs = CASE WHEN excluded.score > scores.score THEN excluded.cigs ELSE scores.cigs END,
         updated_at = CASE WHEN excluded.score > scores.score THEN CURRENT_TIMESTAMP ELSE scores.updated_at END,
         score = max(scores.score, excluded.score)
-    `).bind(score.playerId, score.diff, score.name, score.score, score.survive, score.cigs),
+    `).bind(score.playerId, score.diff, score.character, score.name, score.score, score.survive, score.cigs),
   ]);
 
-  const best = await env.DB.prepare('SELECT score FROM scores WHERE player_id = ?1 AND diff = ?2').bind(score.playerId, score.diff).first();
-  const rank = await env.DB.prepare('SELECT count(*) + 1 AS rank FROM scores WHERE diff = ?1 AND score > ?2').bind(score.diff, best.score).first();
-  return json({ best: best.score, rank: rank.rank }, 200, origin);
+  const best = await env.DB.prepare('SELECT score FROM scores WHERE player_id = ?1 AND diff = ?2 AND character = ?3')
+    .bind(score.playerId, score.diff, score.character).first();
+  const rank = await env.DB.prepare('SELECT count(*) + 1 AS rank FROM scores WHERE diff = ?1 AND character = ?2 AND score > ?3')
+    .bind(score.diff, score.character, best.score).first();
+  return json({ best: best.score, rank: rank.rank, character: score.character }, 200, origin);
 }
 
 export default {
