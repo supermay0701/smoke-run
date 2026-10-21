@@ -39,6 +39,7 @@
 
 // ====== 基本設定 ======
 const W = 450, H = 800;
+const GAME_VERSION = '1.1.0-beta.1';
 const FONT = '"Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif';
 const cv = document.getElementById('c');
 const ctx = cv.getContext('2d');
@@ -126,6 +127,7 @@ const CFG = {
   spacing: 155,       // 物件之間的平均間距 px（速度越快，生成越頻繁）
   zombieChance: 0.3,  // 電子煙是喪屍煙彈的機率
   zombieTime: 6,      // 喪屍化持續秒數
+  rollWeedChance: 0.3, // 撿到的捲菸有 30% 機率其實是大麻捲菸
   // 左右移動靈敏度：[起始, 最高速時]，會跟著捲動速度一起變靈敏
   follow: [6, 12],      // 滑鼠／手指跟隨的反應（越大越跟手）
   maxMove: [380, 720],  // 左右移動速度上限 px/s
@@ -164,7 +166,7 @@ let D = DIFFS[diffIdx];
 const CHARS = [
   { id: 'young', name: '年輕人', icon: '🧑', desc: '移動快 · 肺較脆', move: 1.08, lung: 1.10, fine: 1, color: '#228be6' },
   { id: 'elder', name: '老人',   icon: '👴', desc: '移動慢 · 傷肺較低', move: .90, lung: .85, fine: 1, color: '#7950f2' },
-  { id: 'punk',  name: '流氓',   icon: '🧑‍🎤', desc: '罰款少 · 標準體質', move: 1, lung: 1, fine: .82, color: '#e8590c' },
+  { id: 'punk',  name: '流氓',   icon: '🕺', desc: '三七步 · 罰款較少', move: 1, lung: 1, fine: .82, color: '#e8590c' },
 ];
 let charIdx = clamp(+(localStorage.getItem('smokerun_char') ?? 0), 0, CHARS.length - 1);
 
@@ -172,7 +174,7 @@ let charIdx = clamp(+(localStorage.getItem('smokerun_char') ?? 0), 0, CHARS.leng
 const ITEMS = {
   heat:  { nic: 14, lung: 1.5, harm: 1, cost: 8,   count: 1,  w: 30, h: 58, label: '加熱菸', msg: '「比較健康」？', color: '#a0c4ff' },
   vape:  { nic: 35, lung: 2.5, harm: 2, cost: 50,  count: 1,  w: 30, h: 60, label: '電子煙', msg: '違法電子煙！',   color: '#c77dff' },
-  weed:  { nic: 18, lung: 5,   harm: 4, cost: 500, count: 1,  w: 48, h: 42, label: '大麻煙', msg: '視界開始變彩虹…', color: '#69db7c' },
+  roll:  { nic: 18, lung: 5,   harm: 4, cost: 80,  count: 1,  w: 48, h: 42, label: '捲菸',   msg: '一支來路不明的捲菸…', color: '#d4a373' },
   cig:   { nic: 22, lung: 3,   harm: 2, cost: 6,   count: 1,  w: 42, h: 30, label: '紙菸',   msg: '+尼古丁',        color: '#ffd166' },
   cigar: { nic: 40, lung: 6,   harm: 3, cost: 300, count: 1,  w: 52, h: 30, label: '雪茄',   msg: '大人的味道～',   color: '#e9c46a' },
   pack:  { nic: 60, lung: 12,  harm: 5, cost: 125, count: 20, w: 34, h: 52, label: '整包菸', msg: '一口氣一包！',   color: '#ff9f1c' },
@@ -205,9 +207,9 @@ const tierProgress = (m, i = tierOf(m)) => {
 
 const GATES = [
   [{ t: '🎰 樂透 ×3',       fx: () => { for (let i = 0; i < 3; i++) setTimeout(() => G && state === 'play' && collectMoney({ type: 'lotto', x: P.x, y: P.y - 40 * i }), i * 350); } },
-   { t: '💼 加班 +$5,000',   fx: () => { G.money += 5000; G.nic = Math.max(0, G.nic - 30); pop('加班好累…好想抽菸', P.x, P.y - 100, '#ffd166'); } }],
+   { t: '💼 加班 +$5,000',   fx: () => { const n = 5000 * rewardMult(); G.money += n; G.earned += n; pop(rewardMult() > 1 ? '🌈 迷幻加倍 +$10,000' : '加班好累…好想抽菸', P.x, P.y - 100, '#ffd166'); G.nic = Math.max(0, G.nic - 30); } }],
   [{ t: '🚬 +1 包菸',       fx: () => smoke('pack', P.x, P.y) },
-   { t: '💰 +NT$1,000',     fx: () => { G.money += 1000; } }],
+    { t: '💰 +NT$1,000',     fx: () => { const n = 1000 * rewardMult(); G.money += n; G.earned += n; if (n > 1000) pop('🌈 迷幻加倍 +$2,000', P.x, P.y - 100, '#ffe066'); } }],
   [{ t: '🔥 尼古丁補滿',    fx: () => { G.nic = 100; addLung(6); } },
    { t: '🩺 肺部健檢',      fx: () => { G.healthy++; G.lung = Math.max(G.scar, G.lung - 8); pop('肺損傷 -8', P.x, P.y - 100, '#8ce99a'); } }],
   [{ t: '🚬 再來三根',      fx: () => { for (let i = 0; i < 3; i++) smoke('cig', P.x, P.y, true); } },
@@ -271,7 +273,7 @@ ACH.push(...[
   { id: 'score2000', icon: '📈', name: '越跑越上癮', desc: '單局爽度達 2,000', c: g => g.score >= 2000 },
   { id: 'score5000', icon: '💫', name: '爽到忘記肺', desc: '單局爽度達 5,000', c: g => g.score >= 5000 },
   { id: 'score8000', icon: '🌋', name: '爽度失控', desc: '單局爽度達 8,000', c: g => g.score >= 8000 },
-  { id: 'score12000', icon: '👑', name: '虛假的巔峰', desc: '單局爽度達 12,000', c: g => g.score >= 12000 },
+  { id: 'cat100', icon: '👑', name: '百貓之王', desc: '累積遇見 100 隻街貓', c: g => g.catTotal >= 100 },
 
   { id: 't30', icon: '⏱️', name: '三十秒菸槍', desc: '單局存活 30 秒', c: g => g.t >= 30 },
   { id: 't90', icon: '⏳', name: '九十秒不倒', desc: '單局存活 90 秒', c: g => g.t >= 90 },
@@ -284,16 +286,16 @@ ACH.push(...[
   { id: 'money30k', icon: '👔', name: '荷包鼓起來', desc: '身上的錢達到 $30,000', c: g => g.maxMoney >= 30000 },
   { id: 'money75k', icon: '💎', name: '土豪預備軍', desc: '身上的錢達到 $75,000', c: g => g.maxMoney >= 75000 },
   { id: 'money150k', icon: '🏎️', name: '跑車還有找', desc: '身上的錢達到 $150,000', c: g => g.maxMoney >= 150000 },
-  { id: 'money250k', icon: '🏦', name: '菸槍財閥', desc: '身上的錢達到 $250,000', c: g => g.maxMoney >= 250000 },
+  { id: 'cat30', icon: '🐈', name: '貓咪巡守隊', desc: '累積遇見 30 隻街貓', c: g => g.catTotal >= 30 },
 
   { id: 'earn1k', icon: '🪙', name: '路上有錢', desc: '單局累積撿到 $1,000', c: g => g.earned >= 1000 },
   { id: 'earn10k', icon: '💰', name: '沿路發財', desc: '單局累積撿到 $10,000', c: g => g.earned >= 10000 },
-  { id: 'earn50k', icon: '🎰', name: '天選之人', desc: '單局累積撿到 $50,000', c: g => g.earned >= 50000 },
+  { id: 'jail', icon: '🚔', name: '尿檢陽性', desc: '迷幻時碰到警察，被送進牢裡', c: g => g.over === 'jail' },
 
   { id: 'fine2k', icon: '🧾', name: '第一張罰單', desc: '單局罰款達 $2,000', c: g => g.fines >= 2000 },
   { id: 'fine5k', icon: '🚓', name: '屢勸不聽', desc: '單局罰款達 $5,000', c: g => g.fines >= 5000 },
   { id: 'fine20k', icon: '📚', name: '罰單成冊', desc: '單局罰款達 $20,000', c: g => g.fines >= 20000 },
-  { id: 'fine50k', icon: '⚖️', name: '罰到懷疑人生', desc: '單局罰款達 $50,000', c: g => g.fines >= 50000 },
+  { id: 'cat50', icon: '😸', name: '半百貓緣', desc: '累積遇見 50 隻街貓', c: g => g.catTotal >= 50 },
 
   { id: 'heal20', icon: '🩹', name: '修補肺部', desc: '單局累積治療 20% 肺損傷', c: g => g.healed >= 20 },
   { id: 'heal50', icon: '🩺', name: '半顆肺翻新', desc: '單局累積治療 50% 肺損傷', c: g => g.healed >= 50 },
@@ -317,9 +319,9 @@ ACH.push(...[
   { id: 'cat10', icon: '🐱', name: '戒癮喵誕生', desc: '累積抓到 10 隻貓，永久獲得戒癮喵', c: g => g.catTotal >= 10 },
   { id: 'cat20', icon: '😺', name: '貓派掌門', desc: '累積抓到 20 隻貓', c: g => g.catTotal >= 20 },
 
-  { id: 'weed1', icon: '🌈', name: '第一次迷幻', desc: '碰到 1 支大麻煙', c: g => g.weeds >= 1 },
-  { id: 'weed3', icon: '🌀', name: '彩虹視界', desc: '單局碰到 3 支大麻煙', c: g => g.weeds >= 3 },
-  { id: 'weed5', icon: '🦄', name: '現實融化了', desc: '單局碰到 5 支大麻煙', c: g => g.weeds >= 5 },
+  { id: 'weed1', icon: '🌈', name: '抽到暗雷', desc: '從捲菸中抽到 1 支大麻捲菸', c: g => g.weeds >= 1 },
+  { id: 'weed3', icon: '🌀', name: '彩虹視界', desc: '單局抽到 3 支大麻捲菸', c: g => g.weeds >= 3 },
+  { id: 'weed5', icon: '🦄', name: '現實融化了', desc: '單局抽到 5 支大麻捲菸', c: g => g.weeds >= 5 },
 
   { id: 'vape5', icon: '🔋', name: '電子雲霧', desc: '單局抽 5 支電子煙', c: g => g.kinds.vape >= 5 },
   { id: 'vape10', icon: '⚡', name: '充電式煙囪', desc: '單局抽 10 支電子煙', c: g => g.kinds.vape >= 10 },
@@ -365,11 +367,19 @@ const SATIRE = [
   '恭喜！你的肺擊敗了全國 0% 的肺。',
   '「我隨時都可以戒」——你，每一天',
 ];
+const HEALTH_FACTS = [
+  '吸菸會傷害幾乎全身器官，不只肺。',
+  '二手菸沒有安全暴露量，也會傷害身邊的人。',
+  '約九成慢性阻塞性肺病患者與吸菸有關。',
+  '尼古丁會造成依賴，讓「想停就停」變得困難。',
+  '戒菸後，身體會逐步開始修復。',
+];
 
 // ====== 狀態 ======
 let state = 'title';
 let G = null, P = null;
 let bgOff = 0;
+function rewardMult() { return G && G.weed > 0 ? 2 : 1; }
 let bests = {};
 try { bests = JSON.parse(localStorage.getItem('smokerun_bests') || '{}') || {}; } catch (e) {}
 const bestOf = () => bests[D.id] || 0;
@@ -384,9 +394,9 @@ function newGame() {
     t: 0, speed: CFG.baseSpeed, dist: 0, score: 0, diff: diffIdx, char: C.id,
     nic: D.nic, lung: 0, money: D.money, tier: null, tierT: 3.5, maxMoney: D.money, wasBeggar: false,
     cigs: 0, cigMoney: 0, fines: 0, rooms: 0, earned: 0,
-    kinds: { cig: 0, pack: 0, cigar: 0, heat: 0, vape: 0, weed: 0 },
+    kinds: { cig: 0, pack: 0, cigar: 0, heat: 0, vape: 0, roll: 0 },
     zombie: 0, zombies: 0, buckets: 0, escapes: 0, healthy: 0, speedLv: 0, newAch: [],
-    good: 0, tungs: 0, weed: 0, weeds: 0,
+    good: 0, tungs: 0, weed: 0, weeds: 0, urineTests: 0,
     cats: 0, catTotal: totalCats, catMode: totalCats >= 10,
     cleanZones: 0, cleanStreak: 0, maxCleanStreak: 0, zonesEntered: 0, zoneMoney: 0,
     scar: 0, sinceSmoke: 99, chain: 0, maxChain: 0, hosps: 0, hospCost: 0, healed: 0,
@@ -396,7 +406,7 @@ function newGame() {
     spawnT: 0.6, lastCig: 0, cd: { zone: 5, room: 9, gate: 12, tung: CFG.goodStart, hosp: CFG.hospStart },
     wanted: 0, inv: 0, shake: 0, trap: null, inZone: false,
     quitT: 0, smokeT: 0, coughT: 3,
-    over: null, overT: 0, satire: '',
+    over: null, overT: 0, satire: '', healthFact: '',
   };
   P = { x: W / 2, tx: W / 2, y: H - 150, w: 34, h: 52, walk: 0 };
   state = 'play';
@@ -615,7 +625,7 @@ function fine(amt, msg) {
   G.fines += paid;
   G.inv = 1.2;
   G.shake = 0.4;
-  const shown = paid === amt ? msg : `${msg.replace(/NT\$[\d,]+/, `NT$${fmt(paid)}`)}（喬價）`;
+  const shown = paid === amt ? msg : msg.replace(/NT\$[\d,]+/, `NT$${fmt(paid)}`);
   pop(shown, P.x, P.y - 90, '#ff4d4d', 20);
   sfx('hit');
 }
@@ -638,6 +648,7 @@ function addLung(v) {
 
 function smoke(kind, x, y, silent = false) {
   const it = ITEMS[kind];
+  const weedRoll = kind === 'roll' && Math.random() < CFG.rollWeedChance;
   G.nic = Math.min(100, G.nic + it.nic * D.gain);
   // 連抽：短時間內一直抽，傷害加重
   G.chain = G.sinceSmoke < CFG.chainWindow ? G.chain + 1 : 1;
@@ -648,7 +659,7 @@ function smoke(kind, x, y, silent = false) {
   G.cigs += it.count;
   G.cigMoney += it.cost;
   G.money -= it.cost;
-  G.score += it.nic;
+  G.score += it.nic * (G.weed > 0 || weedRoll ? 2 : 1);
   G.kinds[kind]++;
   if (G.firstSmokeT === undefined) G.firstSmokeT = G.t;
   if (G.t - G.lastHospT < 3) G.relapse = true;
@@ -662,11 +673,12 @@ function smoke(kind, x, y, silent = false) {
     G.shake = Math.max(G.shake, 0.15);
   }
   sfx('smoke');
-  if (kind === 'weed') {
-    G.weed = 9;
+  if (weedRoll) {
+    G.weed = 10;
     G.weeds++;
-    G.wanted = 10;
-    pop('🌈 大麻煙：視界開始融化…', W / 2, 300, '#69db7c', 24);
+    G.wanted = 12;
+    pop('🌈 這支捲菸不對勁…分數、收入 ×2！', W / 2, 300, '#69db7c', 22);
+    pop('🚔 迷幻時碰到警察，尿檢就直接坐牢', W / 2, 336, '#ff8787', 16);
     sfx('weed');
   } else if (kind === 'vape' && Math.random() < CFG.zombieChance) {
     zombify();
@@ -723,6 +735,12 @@ function collectMoney(o) {
     size = amt >= 10000 ? 26 : 18;
     if (amt >= 50000) { G.jackpot = true; G.shake = 0.5; pop('💰💰 頭獎！！ 💰💰', W / 2, 300, '#ffd43b', 30); }
   } else if (o.type === 'hongbao') msg = `🧧 紅包 +$${fmt(amt)}`;
+  if (amt > 0 && rewardMult() > 1) {
+    amt *= 2;
+    msg = `🌈 ×2 +$${fmt(amt)}！`;
+    col = '#ffe066';
+    size = Math.max(size, 21);
+  }
   G.money += amt;
   G.earned = (G.earned || 0) + amt;
   pop(msg, o.x, o.y - 20, col, size);
@@ -759,6 +777,14 @@ function enterHospital(o) {
 }
 
 function hitEnemy(o) {
+  if (o.type === 'police' && G.weed > 0) {
+    G.urineTests++;
+    G.shake = 0.7;
+    pop('🚔 尿檢呈陽性！直接坐牢', W / 2, 280, '#ff4d4d', 25);
+    sfx('hit');
+    end('jail');
+    return;
+  }
   // 懂事模式：沒在抽菸，稽查拿你沒轍
   if (G.good > 0 && o.type !== 'bucket') {
     pop(o.type === 'police' ? '警察：好孩子 👍' : '衛生局：辛苦了！', P.x, P.y - 90, '#8ce99a');
@@ -784,9 +810,9 @@ function collectCat(o) {
   totalCats++;
   G.catTotal = totalCats;
   localStorage.setItem('smokerun_cats', totalCats);
-  G.score += 25;
+  G.score += 25 * rewardMult();
   G.nic = Math.max(0, G.nic - 4);
-  pop(`🐈 街貓累積 ${Math.min(totalCats, 10)}/10`, o.x, o.y - 24, '#ffe066', 19);
+  pop(totalCats < 10 ? `🐈 戒癮喵進度 ${totalCats}/10` : `🐾 街貓累積 ${totalCats} 隻`, o.x, o.y - 24, '#ffe066', 19);
   sfx('cat');
   if (!G.catMode && totalCats >= 10) {
     G.catMode = true;
@@ -807,12 +833,13 @@ function rewardZone(o) {
   G.cleanZones++;
   G.cleanStreak++;
   G.maxCleanStreak = Math.max(G.maxCleanStreak, G.cleanStreak);
-  const reward = Math.min(1200, 500 + (G.cleanStreak - 1) * 100);
+  const base = Math.min(1200, 500 + (G.cleanStreak - 1) * 100);
+  const reward = base * rewardMult();
   G.money += reward;
   G.earned += reward;
   G.zoneMoney += reward;
   G.healthy++;
-  pop(`🚭 忍住了！+$${fmt(reward)}（連續 ${G.cleanStreak}）`, P.x, P.y - 110, '#8ce99a', 19);
+  pop(`🚭 忍住了！+$${fmt(reward)}${reward > base ? ' ×2' : ''}（連續 ${G.cleanStreak}）`, P.x, P.y - 110, '#8ce99a', 19);
   sfx('zone');
 }
 
@@ -878,7 +905,7 @@ function spawn() {
   // 小型物件（權重隨時間變化）
   const k = Math.min(1, G.t / 90), e = D.enemy;
   const table = [
-    ['cig', 28], ['heat', 7], ['cigar', 5], ['pack', 4], ['vape', 4], ['weed', G.t > 20 ? 2 : 0],
+    ['cig', 28], ['heat', 7], ['cigar', 5], ['pack', 4], ['vape', 4], ['roll', G.t > 20 ? 3 : 0],
     ['cat', 2.8],
     ['coin', 7], ['cash', 3.5], ['hongbao', 1.5], ['lotto', 2],
     ['inspector', (12 + 8 * k) * e], ['bucket', (10 + 4 * k) * e], ['police', ((G.wanted > 0 ? 25 : 5) + 6 * k) * e],
@@ -930,7 +957,7 @@ function update(dt) {
     G.lung = Math.max(G.scar, G.lung - CFG.lungRecover * (G.good > 0 ? 2 : 1) * (G.catMode ? 1.3 : 1) * dt);
   }
   G.nic = clamp(G.nic, 0, 100);
-  if (G.good <= 0) G.score += (G.nic / 100) * 10 * dt * (G.trap ? 2 : 1);
+  if (G.good <= 0) G.score += (G.nic / 100) * 10 * dt * (G.trap ? 2 : 1) * rewardMult();
 
   if (G.tut) tutUpdate(dt);
 
@@ -1043,6 +1070,7 @@ function update(dt) {
     } else if (o.kind === 'enemy' && G.inv <= 0 && hitP(o, 0.65)) {
       o.dead = true;
       hitEnemy(o);
+      if (state === 'over') return;
     }
   }
   G.objs = G.objs.filter(o => !o.dead && o.y - o.h / 2 < H + 40);
@@ -1211,6 +1239,7 @@ function end(cause) {
   G.overT = 0;
   overAchPage = 0;
   G.satire = SATIRE[Math.floor(Math.random() * SATIRE.length)];
+  G.healthFact = HEALTH_FACTS[Math.floor(Math.random() * HEALTH_FACTS.length)];
   state = 'over';
   checkAch();
   toasts = [];
@@ -1268,7 +1297,7 @@ function drawBg() {
 function label(s, y, color = '#fff') { txtS(s, 0, y, 12, color); }
 
 // 傷肺等級：5 個點，紅點越多越傷肺
-const LABEL_Y = { cig: 18, pack: 30, cigar: 20, heat: 32, vape: 34, weed: 28 };
+const LABEL_Y = { cig: 18, pack: 30, cigar: 20, heat: 32, vape: 34, roll: 28 };
 function harmDots(type) {
   const n = ITEMS[type].harm, y = LABEL_Y[type] + 13;
   ctx.fillStyle = 'rgba(0,0,0,.55)'; rr(-21, y - 5, 42, 10, 5); ctx.fill();
@@ -1297,6 +1326,55 @@ function drawHospital(o) {
     const cost = Math.round(CFG.hospBase + Math.max(0, can) * CFG.hospPerPt);
     txtS(can < 3 ? '肺還好，不用看' : `治療 -${Math.round(can)}%　$${fmt(cost)}`, o.x, y + o.h + 14, 13, can < 3 ? '#ccc' : '#8ce99a');
   }
+}
+
+// 圓潤的 Q 版貓咪；戒癮喵會多一條綠領巾與禁菸小牌。
+function drawCuteCat(x, y, s = 1, companion = false, phase = 0) {
+  ctx.save();
+  ctx.translate(x, y); ctx.scale(s, s);
+  const bob = Math.sin(phase) * 1.6;
+  const fur = companion ? '#fff1c7' : '#f6ad55';
+  const stripe = companion ? '#d68c45' : '#b86b24';
+
+  // 尾巴、身體與小短腿
+  ctx.strokeStyle = stripe; ctx.lineWidth = 7; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(12, 7 + bob); ctx.bezierCurveTo(28, 1 + bob, 26, -15 + bob, 18, -12 + bob); ctx.stroke();
+  ctx.fillStyle = fur; ctx.beginPath(); ctx.ellipse(0, 7 + bob, 15, 13, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#fff7e6';
+  ctx.beginPath(); ctx.ellipse(-8, 17 + bob, 6, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(8, 17 + bob, 6, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+
+  // 大頭、立耳與耳朵內側
+  ctx.fillStyle = fur;
+  ctx.beginPath(); ctx.moveTo(-16, -13 + bob); ctx.lineTo(-12, -31 + bob); ctx.lineTo(-3, -20 + bob); ctx.lineTo(8, -31 + bob); ctx.lineTo(17, -12 + bob); ctx.closePath(); ctx.fill();
+  circle(0, -10 + bob, 18);
+  ctx.fillStyle = '#ffb3b3';
+  ctx.beginPath(); ctx.moveTo(-13, -17 + bob); ctx.lineTo(-11, -27 + bob); ctx.lineTo(-6, -20 + bob); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(8, -20 + bob); ctx.lineTo(8, -27 + bob); ctx.lineTo(13, -17 + bob); ctx.fill();
+
+  // 虎斑、亮晶晶大眼與肉球鼻
+  ctx.strokeStyle = stripe; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+  for (const dx of [-7, 0, 7]) { ctx.beginPath(); ctx.moveTo(dx, -26 + bob); ctx.lineTo(dx * .75, -20 + bob); ctx.stroke(); }
+  ctx.fillStyle = '#30251f'; circle(-7, -11 + bob, 4); circle(7, -11 + bob, 4);
+  ctx.fillStyle = '#fff'; circle(-8.2, -12.5 + bob, 1.5); circle(5.8, -12.5 + bob, 1.5);
+  ctx.fillStyle = '#f783ac';
+  ctx.beginPath(); ctx.moveTo(-2.5, -4 + bob); ctx.lineTo(2.5, -4 + bob); ctx.lineTo(0, -1 + bob); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#6b3e2e'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(0, -1 + bob); ctx.quadraticCurveTo(-3, 3 + bob, -6, 0 + bob); ctx.moveTo(0, -1 + bob); ctx.quadraticCurveTo(3, 3 + bob, 6, 0 + bob); ctx.stroke();
+  for (const side of [-1, 1]) {
+    ctx.beginPath(); ctx.moveTo(side * 5, -2 + bob); ctx.lineTo(side * 18, -5 + bob); ctx.moveTo(side * 5, 1 + bob); ctx.lineTo(side * 18, 3 + bob); ctx.stroke();
+  }
+
+  if (companion) {
+    // 會甩動的戒癮綠領巾
+    ctx.strokeStyle = '#2f9e44'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(0, 1 + bob, 13, .1, Math.PI - .1); ctx.stroke();
+    ctx.fillStyle = '#40c057';
+    ctx.beginPath(); ctx.moveTo(5, 4 + bob); ctx.lineTo(20 + Math.sin(phase * 1.7) * 3, 11 + bob); ctx.lineTo(9, 15 + bob); ctx.closePath(); ctx.fill();
+    // 小小禁菸吊牌
+    ctx.fillStyle = '#fff'; circle(-3, 5 + bob, 5.5);
+    ctx.strokeStyle = '#e03131'; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.arc(-3, 5 + bob, 4.5, 0, Math.PI * 2); ctx.moveTo(-6, 2 + bob); ctx.lineTo(0, 8 + bob); ctx.stroke();
+  }
+  ctx.restore();
 }
 
 function drawItem(type, x, y, s = 1) {
@@ -1349,29 +1427,21 @@ function drawItem(type, x, y, s = 1) {
       ctx.fillStyle = '#e0aaff'; ctx.fillRect(-5, 4, 10, 3);
       label('電子煙', 34, '#ff8fab');
       break;
-    case 'weed': {
-      const glow = .55 + Math.sin(t * 5) * .25;
-      ctx.shadowColor = `rgba(105,219,124,${glow})`; ctx.shadowBlur = 14;
+    case 'roll': {
       ctx.save(); ctx.rotate(-.28);
-      ctx.fillStyle = '#f8f9fa'; rr(-21, -5, 38, 10, 5); ctx.fill();
+      ctx.fillStyle = '#efe1c5'; rr(-21, -5, 40, 10, 5); ctx.fill();
+      ctx.strokeStyle = '#b08968'; ctx.lineWidth = 1.5; ctx.stroke();
       ctx.fillStyle = '#8d6e63'; ctx.fillRect(-22, -5, 9, 10);
-      ctx.fillStyle = '#51cf66'; ctx.beginPath(); ctx.moveTo(17, -5); ctx.lineTo(25, 0); ctx.lineTo(17, 5); ctx.fill();
-      ctx.restore(); ctx.shadowBlur = 0;
-      ctx.fillStyle = '#40c057';
-      for (let i = 0; i < 5; i++) { ctx.save(); ctx.rotate(i * 1.25); ctx.beginPath(); ctx.ellipse(0, -19, 3, 9, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore(); }
-      label('大麻煙', 28, '#b2f2bb');
+      ctx.fillStyle = '#6b4f35'; ctx.beginPath(); ctx.moveTo(19, -5); ctx.lineTo(25, 0); ctx.lineTo(19, 5); ctx.fill();
+      ctx.restore();
+      ctx.fillStyle = '#343a40'; circle(0, -18, 9);
+      txt('?', 0, -18, 13, '#ffe066');
+      label('捲菸？', 28, '#ffe8cc');
       break;
     }
     case 'cat': {
-      const bob = Math.sin(t * 5 + x) * 2;
-      ctx.fillStyle = '#f6ad55';
-      ctx.beginPath(); ctx.moveTo(-15, -10 + bob); ctx.lineTo(-10, -26 + bob); ctx.lineTo(-2, -14 + bob); ctx.lineTo(8, -25 + bob); ctx.lineTo(15, -9 + bob); ctx.closePath(); ctx.fill();
-      circle(0, -8 + bob, 16);
-      ctx.fillStyle = '#fff3bf'; ctx.beginPath(); ctx.ellipse(0, -3 + bob, 9, 7, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#222'; circle(-6, -10 + bob, 2); circle(6, -10 + bob, 2);
-      ctx.strokeStyle = '#5c3b1e'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, -4 + bob, 5, .2, Math.PI - .2); ctx.stroke();
-      ctx.beginPath(); ctx.arc(13, 8 + bob, 10, -1.4, 1.4); ctx.stroke();
-      label('街貓', 23, '#ffe066');
+      drawCuteCat(0, 0, .92, false, t * 5 + x);
+      label('街貓', 29, '#ffe066');
       break;
     }
     case 'coin':
@@ -1547,17 +1617,78 @@ function drawFlies(x, y) {
 function drawCompanionCat() {
   if (!G.catMode) return;
   const side = P.x < W / 2 ? 1 : -1;
-  const x = clamp(P.x + side * 42, 24, W - 24), y = P.y + 14 + Math.sin(G.t * 5) * 2;
+  const x = clamp(P.x + side * 45, 25, W - 25), y = P.y + 10;
   ctx.save();
   ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.beginPath(); ctx.ellipse(x, y + 17, 15, 4, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#f6ad55';
-  ctx.beginPath(); ctx.moveTo(x - 13, y - 8); ctx.lineTo(x - 9, y - 22); ctx.lineTo(x - 2, y - 12); ctx.lineTo(x + 7, y - 22); ctx.lineTo(x + 13, y - 7); ctx.closePath(); ctx.fill();
-  circle(x, y - 6, 14); rr(x - 12, y + 3, 24, 18, 9); ctx.fill();
-  ctx.strokeStyle = '#f03e3e'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(x, y + 3, 12, .1, Math.PI - .1); ctx.stroke();
-  ctx.fillStyle = '#222'; circle(x - 5, y - 8, 1.7); circle(x + 5, y - 8, 1.7);
-  ctx.fillStyle = '#2f9e44'; ctx.beginPath(); ctx.moveTo(x, y + 6); ctx.lineTo(x + side * 15, y + 13); ctx.lineTo(x + side * 5, y + 17); ctx.closePath(); ctx.fill();
-  txtS('戒癮喵', x, y + 30, 10, '#b2f2bb');
+  drawCuteCat(x, y, .88, true, G.t * 6);
+  // 偶爾舉牌吐槽，讓陪跑角色更有個性。
+  if (Math.sin(G.t * 1.7) > .45) {
+    const px = x + side * 17;
+    ctx.strokeStyle = '#6b4f35'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px, y + 7); ctx.lineTo(px, y - 18); ctx.stroke();
+    ctx.fillStyle = '#fff'; rr(px - 11, y - 31, 22, 16, 4); ctx.fill();
+    ctx.strokeStyle = '#e03131'; ctx.lineWidth = 1.5; ctx.stroke();
+    txt('🚭', px, y - 23, 11, '#e03131');
+  }
+  txtS(`戒癮喵 🐾${G.catTotal}`, x, y + 32, 10, '#b2f2bb');
   ctx.restore();
+}
+
+// 肺葉輪廓、支氣管與葡萄串狀肺泡，讓傷害不再只是幾顆紅點。
+function drawAlveoliLobe(side, damage) {
+  const cx = side < 0 ? 43 : W - 43, cy = 365;
+  ctx.save();
+  ctx.translate(cx, cy); ctx.scale(side, 1);
+
+  // 半透明肺葉外型
+  ctx.fillStyle = `rgba(255,145,160,${.08 + damage * .12})`;
+  ctx.strokeStyle = `rgba(255,185,195,${.28 + damage * .34})`;
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.moveTo(1, -77);
+  ctx.bezierCurveTo(-24, -69, -35, -42, -34, -8);
+  ctx.bezierCurveTo(-34, 31, -25, 69, -2, 76);
+  ctx.bezierCurveTo(22, 80, 31, 52, 28, 24);
+  ctx.bezierCurveTo(26, 2, 17, -17, 11, -37);
+  ctx.bezierCurveTo(8, -51, 8, -68, 1, -77);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+
+  // 氣管與分枝
+  ctx.strokeStyle = `rgba(255,205,205,${.45 + damage * .3})`;
+  ctx.lineWidth = 4; ctx.lineCap = 'round';
+  const branches = [
+    [[3,-79],[4,-48]], [[4,-48],[-13,-27]], [[4,-48],[16,-23]],
+    [[-13,-27],[-20,-3]], [[-13,-27],[-24,-36]],
+    [[16,-23],[20,2]], [[16,-23],[24,-35]],
+    [[-20,-3],[-18,26]], [[20,2],[15,31]], [[-18,26],[-9,50]],
+  ];
+  for (const [[x1,y1],[x2,y2]] of branches) { ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); }
+
+  // 每個分枝末端是一串像葡萄的肺泡。
+  const clusters = [[-25,-39],[27,-38],[-26,2],[25,4],[-20,31],[17,34],[-7,55]];
+  const bubbles = [[0,0],[-6,-3],[6,-3],[-4,5],[5,5]];
+  const total = clusters.length * bubbles.length;
+  const broken = Math.floor(damage * total);
+  clusters.forEach(([gx, gy], ci) => bubbles.forEach(([dx, dy], bi) => {
+    const idx = ci * bubbles.length + bi;
+    const dead = idx < broken;
+    const pulse = G.alveoliPop > 0 && idx === Math.max(0, broken - 1) ? G.alveoliPop : 0;
+    const ax = gx + dx, ay = gy + dy, r = dead ? 3.3 : 4.7 + pulse * 2.5;
+    ctx.fillStyle = dead ? `rgba(82,29,34,${.48 + damage * .34})` : `rgba(255,191,198,${.38 + damage * .28})`;
+    ctx.beginPath(); ctx.ellipse(ax, ay, r, dead ? 2.2 : r, dead ? .35 : 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = dead ? '#ff6b6b' : 'rgba(255,225,225,.72)'; ctx.lineWidth = dead ? 1.1 : .8; ctx.stroke();
+    if (dead && idx % 3 === 0) {
+      ctx.strokeStyle = 'rgba(255,120,120,.8)'; ctx.lineWidth = .9;
+      ctx.beginPath(); ctx.moveTo(ax - 3, ay - 3); ctx.lineTo(ax, ay); ctx.lineTo(ax + 3, ay - 3); ctx.moveTo(ax, ay); ctx.lineTo(ax - 1, ay + 3); ctx.stroke();
+    }
+  }));
+
+  if (G.alveoliPop > 0 && broken > 0) {
+    const [bx, by] = clusters[Math.floor((broken - 1) / bubbles.length) % clusters.length];
+    ctx.strokeStyle = `rgba(255,80,80,${G.alveoliPop})`; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(bx, by, 12 + (1 - G.alveoliPop) * 16, 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.restore();
+  txtS('肺泡', cx, cy + 90, 11, damage > .55 ? '#ff8787' : '#ffc9c9');
 }
 
 // 肺損傷視覺：煙霧只沿著左右兩側緩慢累積，保留中央遊戲視野。
@@ -1591,24 +1722,9 @@ function drawLungSmoke() {
       circle(x - side * r * 0.35, y + r * 0.18, r * 0.72);
     }
 
-    // 兩側肺泡示意：損傷越高，越多肺泡塌陷、出現裂痕。
-    const cx = side < 0 ? 35 : W - 35, cy = 355;
-    const broken = Math.floor(damage * 9);
-    const spots = [[0,-42],[-13,-27],[12,-24],[-17,-6],[5,-4],[18,12],[-9,16],[7,36],[-12,43]];
-    ctx.lineWidth = 2;
-    spots.forEach(([dx, dy], i) => {
-      const dead = i < broken, pulse = G.alveoliPop > 0 && i === broken - 1 ? G.alveoliPop : 0;
-      const ax = cx + dx * side, ay = cy + dy, ar = 8 + (i % 3) + pulse * 7;
-      ctx.fillStyle = dead ? `rgba(70,25,28,${.18 + damage * .32})` : `rgba(255,150,155,${.10 + damage * .22})`;
-      circle(ax, ay, ar);
-      ctx.strokeStyle = dead ? `rgba(255,85,90,${.25 + damage * .45})` : `rgba(255,190,190,${.18 + damage * .28})`;
-      ctx.beginPath(); ctx.arc(ax, ay, ar, 0, Math.PI * 2); ctx.stroke();
-      if (dead) {
-        ctx.strokeStyle = `rgba(255,120,120,${.25 + damage * .5})`; ctx.lineWidth = 1.3;
-        ctx.beginPath(); ctx.moveTo(ax - ar * .65, ay - ar * .35); ctx.lineTo(ax, ay); ctx.lineTo(ax + ar * .55, ay - ar * .55); ctx.moveTo(ax, ay); ctx.lineTo(ax - ar * .25, ay + ar * .7); ctx.stroke();
-      }
-    });
   }
+  drawAlveoliLobe(-1, damage);
+  drawAlveoliLobe(1, damage);
   ctx.restore();
 
   if (damage > .28) txtS(`肺泡受損 ${Math.round(G.lung)}%`, W / 2, 158, 15, damage > .7 ? '#ff8787' : '#ffc9c9');
@@ -1617,25 +1733,40 @@ function drawLungSmoke() {
 
 function drawWeedFX() {
   if (G.weed <= 0) return;
-  const power = Math.min(1, G.weed / 1.2, (9 - G.weed) / .8);
+  const power = clamp(Math.min(1, G.weed / 1.2, (10 - G.weed) / .7), 0, 1);
   ctx.save();
+  // 整個畫面先做強烈色相偏移，再疊上移動彩虹與脈衝波紋。
+  ctx.globalCompositeOperation = 'color';
+  ctx.fillStyle = `hsla(${(G.t * 105) % 360},100%,52%,${.42 * power})`;
+  ctx.fillRect(0, 0, W, H);
   ctx.globalCompositeOperation = 'screen';
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < 9; i++) {
     const y = ((i * 132 + G.t * 55) % (H + 160)) - 80;
     const hue = (G.t * 85 + i * 52) % 360;
     const g = ctx.createLinearGradient(0, y - 50, W, y + 50);
     g.addColorStop(0, `hsla(${hue},95%,55%,0)`);
-    g.addColorStop(.5, `hsla(${hue},95%,60%,${.06 * power})`);
+    g.addColorStop(.5, `hsla(${hue},100%,60%,${.16 * power})`);
     g.addColorStop(1, `hsla(${(hue + 90) % 360},95%,55%,0)`);
     ctx.fillStyle = g; ctx.fillRect(0, y - 55, W, 110);
   }
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 7; i++) {
     const r = 40 + ((G.t * (35 + i * 5) + i * 70) % 330);
-    ctx.strokeStyle = `hsla(${(G.t * 110 + i * 70) % 360},100%,65%,${.12 * power * (1 - r / 420)})`;
-    ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(W / 2, H / 2, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = `hsla(${(G.t * 110 + i * 70) % 360},100%,68%,${.24 * power * (1 - r / 420)})`;
+    ctx.lineWidth = 10; ctx.beginPath(); ctx.arc(W / 2 + Math.sin(G.t * 2 + i) * 24, H / 2, r, 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.globalCompositeOperation = 'difference';
+  ctx.globalAlpha = .09 * power;
+  for (let y = 130; y < H; y += 52) {
+    ctx.strokeStyle = `hsl(${(G.t * 140 + y) % 360},100%,65%)`; ctx.lineWidth = 12;
+    ctx.beginPath();
+    for (let x = -20; x <= W + 20; x += 12) {
+      const yy = y + Math.sin(x * .035 + G.t * 4 + y) * 12;
+      x < 0 ? ctx.moveTo(x, yy) : ctx.lineTo(x, yy);
+    }
+    ctx.stroke();
   }
   ctx.restore();
-  txtS(`🌈 迷幻中 ${G.weed.toFixed(1)}s`, W / 2, 222, 17, `hsl(${(G.t * 120) % 360},100%,75%)`);
+  txtS(`🌈 迷幻中：爽度、收入 ×2　${G.weed.toFixed(1)}s`, W / 2, 222, 17, `hsl(${(G.t * 120) % 360},100%,75%)`);
 }
 
 function drawPlayer() {
@@ -1673,7 +1804,16 @@ function drawPlayer() {
       ctx.stroke();
     }
   }
-  drawPlayerBody(ti, car);
+  if (G.char === 'punk' && !car && G.good <= 0) {
+    // 流氓用誇張三七步前進：身體長期偏一邊，再隨步伐左右晃。
+    const lean = .08 + Math.sin(P.walk * .55) * .12;
+    ctx.save();
+    ctx.translate(P.x + Math.sin(P.walk) * 3, P.y + 27);
+    ctx.rotate(lean);
+    ctx.translate(-P.x, -(P.y + 27));
+    drawPlayerBody(ti, car);
+    ctx.restore();
+  } else drawPlayerBody(ti, car);
   if (car) drawCar(P.x, P.y, false);
   if (ti === 0 && G.good <= 0) {
     // 破碗掛在身旁，配合破衣與蒼蠅強化「窮到見底」的辨識度
@@ -1791,8 +1931,19 @@ function drawPlayerBody(ti = 3, car = false) {
     ctx.beginPath(); ctx.arc(x, y - 27, 14, Math.PI * 1.03, Math.PI * 1.97); ctx.fill();
     ctx.fillStyle = '#adb5bd'; circle(x - 11, y - 20, 4); circle(x + 11, y - 20, 4);
   } else if (!good && G.char === 'punk') {
-    ctx.fillStyle = '#f06595';
-    for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(x + i * 5 - 3, y - 34); ctx.lineTo(x + i * 5, y - 48 - Math.abs(i) * 2); ctx.lineTo(x + i * 5 + 3, y - 34); ctx.fill(); }
+    // 阿志頭：高聳、向前捲的黑色飛機油頭。
+    ctx.fillStyle = '#171717';
+    ctx.beginPath();
+    ctx.moveTo(x - 14, y - 31);
+    ctx.bezierCurveTo(x - 16, y - 41, x - 8, y - 47, x + 1, y - 44);
+    ctx.bezierCurveTo(x + 10, y - 52, x + 25, y - 47, x + 26, y - 38);
+    ctx.bezierCurveTo(x + 27, y - 31, x + 19, y - 27, x + 11, y - 32);
+    ctx.bezierCurveTo(x + 4, y - 28, x - 5, y - 29, x - 14, y - 31);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#171717'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(x + 19, y - 35, 7, -1.5, .55); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,.28)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(x + 7, y - 43, 12, 3.6, 5.8); ctx.stroke();
   }
   // 眼睛
   ctx.fillStyle = '#222';
@@ -1973,7 +2124,7 @@ function drawHUD() {
     ctx.fillRect(0, 118, W * tierProgress(G.money, ti), 3);
   }
   if (state === 'play') btn(8, 128, 42, 34, 'Ⅱ', '#495057', pauseGame, 17);
-  if (G.catMode) txtS('😺 戒癮喵', 58, 145, 12, '#b2f2bb', 'left');
+  if (G.catMode) txtS(`😺 戒癮喵 · 🐾${G.catTotal}`, 58, 145, 12, '#b2f2bb', 'left');
   if (G.inZone) txtS(`🚭 無菸挑戰 · 連續 ${G.cleanStreak}`, W / 2, 142, 14, '#ffe066');
 }
 
@@ -2154,7 +2305,7 @@ function drawPause() {
   btn(x + 38 + (w - 66) / 2, y + 214, (w - 66) / 2, 48, `${soundPrefs.sfx ? '🔔' : '🔕'} 音效`, soundPrefs.sfx ? '#7950f2' : '#868e96', () => toggleSound('sfx'), 16);
   btn(x + 28, y + 284, w - 56, 46, `✏️ 暱稱：${player.name || '尚未設定'}`, '#4dabf7', () => nameOpen(() => submitPlayer()), 15);
   btn(x + 28, y + 350, w - 56, 46, G.tut ? '🏠 結束教學回首頁' : '🏠 放棄本局回首頁', '#e03131', () => { state = 'title'; }, 16);
-  txt('Esc／P：暫停或繼續', W / 2, y + h - 20, 12, '#868e96', 'center', 'normal');
+  txt(`Esc／P：暫停或繼續　·　v${GAME_VERSION}`, W / 2, y + h - 20, 12, '#868e96', 'center', 'normal');
 }
 
 function drawTitle() {
@@ -2169,7 +2320,7 @@ function drawTitle() {
   txt('一根接一根，人生不設限', W / 2, y + 98, 17, '#ffe3e3');
 
   txt('收集（爽！）', x + 20, y + 146, 16, '#d62828', 'left');
-  ['cig', 'pack', 'cigar', 'heat', 'vape'].forEach((k, i) => drawItem(k, x + 46 + i * 72, y + 192, 0.9));
+  ['cig', 'pack', 'cigar', 'heat', 'vape', 'roll'].forEach((k, i) => drawItem(k, x + 43 + i * 66, y + 192, 0.82));
 
   txt('閃避（不爽！）', x + 20, y + 240, 16, '#1d4ed8', 'left');
   ['inspector', 'police', 'bucket'].forEach((k, i) => drawItem(k, x + 46 + i * 72, y + 288, 0.85));
@@ -2180,8 +2331,8 @@ function drawTitle() {
   emoji('🚭', x + 345, y + 280, 16); txt('禁菸區', x + 345, y + 300, 11, '#e63946');
 
   const lines = [
-    '🫁 肺泡會隨損傷破裂；不抽才會慢慢恢復',
-    '🚭 忍住通過禁菸區有獎金，街貓也能幫你戒癮',
+    '🫁 肺泡會隨損傷塌陷；不抽才會慢慢恢復',
+    '❓ 捲菸內容不明；迷幻雖然加倍，碰警察就坐牢',
   ];
   lines.forEach((s, i) => txt(s, x + 22, y + 346 + i * 20, 13, '#333', 'left', 'normal'));
 
@@ -2224,7 +2375,7 @@ function drawTitle() {
   btn(x + 28 + bw3, by3, bw3, 38, '📊 排行榜', '#4dabf7', () => openLB('title'), 13);
   btn(x + 36 + bw3 * 2, by3, bw3, 38, '📖 教學', '#69db7c', () => { ensureAudio(); newTutorial(); }, 13, '#1b4332');
   const b = bests[DIFFS[diffIdx].id];
-  txt(`${b ? `最高爽度 ${fmt(b)}　·　` : ''}吸菸有害健康，本遊戲純屬反諷`, W / 2, y + h - 10, 10, '#999', 'center', 'normal');
+  txt(`${b ? `最高爽度 ${fmt(b)}　·　` : ''}吸菸有害健康 · v${GAME_VERSION}`, W / 2, y + h - 10, 10, '#999', 'center', 'normal');
 }
 
 function drawOver() {
@@ -2236,6 +2387,7 @@ function drawOver() {
   const head = {
     lung:  ['💀 肺部宣告罷工', '肺損傷已達 100%，身體不會把它當成遊戲。'],
     broke: ['💸 破產了', '菸錢、罰款與醫藥費一起掏空生活。'],
+    jail:  ['🚔 尿檢陽性，直接坐牢', '來路不明的捲菸，讓這一局連重來都來不及。'],
     quit:  ['🎉 意外戒菸成功？！', '撐過了戒斷……原來不抽也活得下去。'],
   }[G.over];
   txt(head[0], W / 2, y + 36, 28, quit ? '#2b8a3e' : '#c1121f');
@@ -2306,7 +2458,8 @@ function drawOver() {
 
   // 底部固定區
   const by = y + h - 228;
-  txt(quit ? '這次是遊戲，下次可以是真的。' : `⚠️ ${G.satire}`, W / 2, by, 15, quit ? '#2b8a3e' : '#c1121f', 'center', 'normal');
+  txt(quit ? '這次是遊戲，下次可以是真的。' : `⚠️ ${G.healthFact}`, W / 2, by - 6, 13, quit ? '#2b8a3e' : '#c1121f', 'center', 'normal');
+  txt(quit ? `v${GAME_VERSION}` : `資料：WHO／國民健康署　·　v${GAME_VERSION}`, W / 2, by + 10, 9, '#868e96', 'center', 'normal');
   ctx.fillStyle = quit ? '#2b8a3e' : '#222'; rr(x + 20, by + 18, w - 40, 64, 12); ctx.fill();
   txt('想真的戒？免費戒菸專線', W / 2, by + 38, 13, '#ddd', 'center', 'normal');
   txt('📞 0800-636363', W / 2, by + 64, 22, '#fff');
