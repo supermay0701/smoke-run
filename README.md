@@ -13,9 +13,15 @@
 - 😇 碰到董氏基金會會暫時「懂事」
 - 💰 身家會改變角色造型：低於 $500 會穿破衣、招來蒼蠅；$20,000 換西裝、$50,000 戴金鍊墨鏡、$100,000 開跑車
 - 三種難度有不同的開局尼古丁：小菸槍 100%、老菸槍 50%、菸蟲 0%
+- 🧑 可選年輕人、老人或流氓，各有移動、傷肺或罰款特性
+- 🚭 無菸通過禁菸區可獲得連續加碼獎金
+- 🐈 街貓會跨局累積，找到 10 隻後解鎖原創伙伴「戒癮喵」
+- 🌈 大麻煙會帶來短暫迷幻彩虹視界與更高肺損傷
+- 🏆 共有 100 個成就；結算頁會介紹本局新解鎖的成就
+- ⏸️ 遊戲中可按 Esc／P 或暫停按鈕調整音樂、音效與暱稱
 
 ## 技術
-單一 `index.html`，純 HTML5 Canvas + JavaScript，不需要任何安裝或建置。
+單一 `index.html`，純 HTML5 Canvas + JavaScript，不需要任何安裝或建置。背景音樂與碰撞音效使用 Web Audio 即時合成，不含外部音樂檔。
 
 排行榜使用 Cloudflare Worker + D1，API 為 <https://smoke-run-api.smoke-run-level-api.workers.dev>；遊戲頁仍部署在 GitHub Pages。維護方式見 [`worker/README.md`](worker/README.md)。
 
