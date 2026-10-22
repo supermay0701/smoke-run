@@ -39,7 +39,7 @@
 
 // ====== 基本設定 ======
 const W = 450, H = 800;
-const GAME_VERSION = '1.1.0-beta.5';
+const GAME_VERSION = '1.1.0-beta.6';
 const FONT = '"Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif';
 const cv = document.getElementById('c');
 const ctx = cv.getContext('2d');
@@ -153,14 +153,13 @@ const CFG = {
   chickenPrice: 85,   // 一塊雞排
 };
 
-// 難度：gain 尼古丁補充倍率、decay 尼古丁消耗倍率、enemy 稽查出現倍率
+// 難度：以生涯爽度解鎖；startSpeed 只改變開局捲動速度，最高速度仍一致。
 const DIFFS = [
-  { id: 'easy',   name: '小菸槍', icon: '🙂', d1: '開局尼古丁 100%', d2: '掉得慢、稽查少', nic: 100, gain: 0.8,  decay: 0.8,  enemy: 0.75, money: 12000, color: '#2f9e44' },
-  { id: 'normal', name: '老菸槍', icon: '😤', d1: '開局尼古丁 50%',  d2: '標準難度',       nic: 50,  gain: 0.65, decay: 1,    enemy: 1,    money: 10000, color: '#e67700' },
-  { id: 'hard',   name: '菸蟲',   icon: '🐛', d1: '開局尼古丁 0%',   d2: '補少掉快稽查多', nic: 0,   gain: 0.5,  decay: 1.25, enemy: 1.3,  money: 8000,  color: '#c92a2a' },
+  { id: 'easy',   name: '小菸槍', icon: '🙂', d1: '初速較慢', d2: '適合先看懂所有機制', unlock: 0,     nic: 100, gain: 1,   decay: .8,  enemy: .75, money: 12000, startSpeed: .86, withdrawalShake: 1,   bystanderAttack: true,  color: '#2f9e44' },
+  { id: 'normal', name: '老菸槍', icon: '😤', d1: '初速 +10%', d2: '補充 -20%・免疫路人攻擊', unlock: 3000,  nic: 50,  gain: .8,  decay: 1,   enemy: 1,   money: 10000, startSpeed: 1.1, withdrawalShake: 1,   bystanderAttack: false, color: '#e67700' },
+  { id: 'hard',   name: '菸蟲',   icon: '🐛', d1: '初速 +20%', d2: '補充 -50%・戒斷晃動 +20%', unlock: 12000, nic: 0,   gain: .5,  decay: 1.25, enemy: 1.3, money: 8000,  startSpeed: 1.2, withdrawalShake: 1.2, bystanderAttack: true,  color: '#c92a2a' },
 ];
-let diffIdx = clamp(+(localStorage.getItem('smokerun_diff') ?? 1), 0, 2);
-let D = DIFFS[diffIdx];
+let diffIdx = clamp(+(localStorage.getItem('smokerun_diff') ?? 0), 0, 2);
 
 // 角色用生涯爽度逐步解鎖，並各自擁有不同的開局狀態與速度曲線。
 const CHARS = [
@@ -174,6 +173,15 @@ if (!localStorage.getItem('smokerun_career_score')) {
   localStorage.setItem('smokerun_career_score', Math.round(careerScore));
 }
 const charUnlocked = i => careerScore >= CHARS[i].unlock;
+const diffUnlocked = i => careerScore >= DIFFS[i].unlock;
+if (!diffUnlocked(diffIdx)) diffIdx = 0;
+let D = DIFFS[diffIdx];
+function cycleUnlockedDiff(step) {
+  for (let n = 1; n <= DIFFS.length; n++) {
+    const i = (diffIdx + step * n + DIFFS.length * 2) % DIFFS.length;
+    if (diffUnlocked(i)) { diffIdx = i; return; }
+  }
+}
 let charIdx = clamp(+(localStorage.getItem('smokerun_char') ?? 0), 0, CHARS.length - 1);
 if (!charUnlocked(charIdx)) charIdx = 0;
 
@@ -359,6 +367,8 @@ ACH.push(...[
   { id: 'flee30', icon: '🏙️', name: '整條街都躲你', desc: '單局嚇跑 30 位路人', c: g => g.bystandersFled >= 30 },
   { id: 'unlockElder', icon: '🔓', name: '解鎖老人', desc: '生涯爽度達 5,000', c: () => careerScore >= 5000 },
   { id: 'unlockPunk', icon: '🔓', name: '解鎖流氓', desc: '生涯爽度達 20,000', c: () => careerScore >= 20000 },
+  { id: 'unlockNormal', icon: '😤', name: '老菸槍資格', desc: '生涯爽度達 3,000，解鎖老菸槍難度', c: () => careerScore >= 3000 },
+  { id: 'unlockHard', icon: '🐛', name: '菸蟲入場券', desc: '生涯爽度達 12,000，解鎖菸蟲難度', c: () => careerScore >= 12000 },
   { id: 'youngMax', icon: '⚡', name: '青春全速', desc: '年輕人達到最高速度等級', c: g => g.char === 'young' && g.speedLv >= 5 },
   { id: 'elder60', icon: '👴', name: '老而彌堅', desc: '使用老人存活 60 秒', c: g => g.char === 'elder' && g.t >= 60 },
   { id: 'punkTycoon', icon: '💎', name: '流氓暴發戶', desc: '使用流氓把身家衝到 $100,000', c: g => g.char === 'punk' && g.maxMoney >= 100000 },
@@ -378,12 +388,12 @@ const ACH_RANKS = {
 const ACH_LEGENDARY = new Set(['quit', 'cig200', 't420', 'cat100', 'hard120', 'allChars']);
 const ACH_DIAMOND = new Set(['lungCancer', 'alveoliEnd', 'lungDisease', 'streetEnd', 'debtEnd', 'ticketEnd', 'rich', 'money150k', 'score8000', 'weed5', 'zone20', 'heal100', 'punkTycoon', 'unlockPunk', 'flee30']);
 const ACH_GOLD = new Set(['cig100', 't180', 't240', 't300', 'hard60', 'score5000', 'money75k', 'fine20k', 'healthy10', 'zone10', 'cat30', 'cat50', 'jail', 'elder60', 'youngMax', 'heritageRepeat']);
-const ACH_SILVER = new Set(['cig25', 'cig50', 'score2000', 'score3k', 't90', 't120', 'money30k', 'earn10k', 'hosp3', 'hosp5', 'heal50', 'zone5', 'zoneStreak5', 'cat10', 'cat20', 'weed3', 'flee10', 'unlockElder', 'heritageHeckled']);
+const ACH_SILVER = new Set(['cig25', 'cig50', 'score2000', 'score3k', 't90', 't120', 'money30k', 'earn10k', 'hosp3', 'hosp5', 'heal50', 'zone5', 'zoneStreak5', 'cat10', 'cat20', 'weed3', 'flee10', 'unlockElder', 'unlockHard', 'heritageHeckled']);
 ACH.forEach(a => {
   a.rank = ACH_LEGENDARY.has(a.id) ? 'legendary' : ACH_DIAMOND.has(a.id) ? 'diamond' : ACH_GOLD.has(a.id) ? 'gold' : ACH_SILVER.has(a.id) ? 'silver' : 'bronze';
   a.points = ACH_RANKS[a.rank].points;
 });
-if (ACH.length !== 118) throw new Error(`成就數量錯誤：${ACH.length}`);
+if (ACH.length !== 120) throw new Error(`成就數量錯誤：${ACH.length}`);
 let achDone = {};
 try { achDone = JSON.parse(localStorage.getItem('smokerun_ach') || '{}') || {}; } catch (e) {}
 let plays = +(localStorage.getItem('smokerun_plays') || 0);
@@ -432,6 +442,7 @@ const bestKey = () => `${DIFFS[diffIdx].id}:${CHARS[charIdx].id}`;
 const bestOf = () => bests[bestKey()] || (CHARS[charIdx].id === 'young' ? bests[DIFFS[diffIdx].id] || 0 : 0);
 
 function newGame() {
+  if (!diffUnlocked(diffIdx)) diffIdx = 0;
   D = DIFFS[diffIdx];
   if (!charUnlocked(charIdx)) charIdx = 0;
   localStorage.setItem('smokerun_diff', diffIdx);
@@ -439,7 +450,7 @@ function newGame() {
   ensureAudio(); AUDIO.next = 0;
   const C = CHARS[charIdx];
   G = {
-    t: 0, speed: CFG.baseSpeed * C.pace, speedMix: 0, dist: 0, score: 0, diff: diffIdx, char: C.id,
+    t: 0, speed: CFG.baseSpeed * C.pace * D.startSpeed, speedMix: 0, dist: 0, score: 0, diff: diffIdx, char: C.id,
     nic: clamp(D.nic + C.nicStart, 0, 100), lung: C.lungStart, money: D.money, tier: null, tierT: 3.5, maxMoney: D.money, wasBeggar: false,
     cigs: 0, cigMoney: 0, fines: 0, rooms: 0, earned: 0,
     kinds: { cig: 0, pack: 0, cigar: 0, heat: 0, vape: 0, roll: 0 },
@@ -455,7 +466,7 @@ function newGame() {
     spawnT: 0.6, lastCig: 0, cd: { zone: 5, heritage: 16, room: 9, gate: 12, tung: CFG.goodStart, hosp: CFG.hospStart },
     wanted: 0, inv: 0, shake: 0, trap: null, inZone: false,
     quitT: 0, smokeT: 0, coughT: 3, bystanderT: 0, bystandersFled: 0, bystanderHits: 0, bystanderLoss: 0,
-    over: null, overT: 0, ending: null, satire: '', healthFact: '', careerGain: 0, newChars: [],
+    over: null, overT: 0, ending: null, satire: '', healthFact: '', careerGain: 0, newChars: [], newDiffs: [],
   };
   P = { x: W / 2, tx: W / 2, y: H - 150, w: 34, h: 52, walk: 0 };
   state = 'play';
@@ -623,8 +634,8 @@ addEventListener('keydown', e => {
   if (state === 'play' && (k === 'Escape' || k === 'p' || k === 'P')) { pauseGame(); return; }
   if (state === 'pause' && (k === 'Escape' || k === 'p' || k === 'P' || k === ' ' || k === 'Enter')) { resumeGame(); return; }
   if (state === 'title') {
-    if (L) diffIdx = (diffIdx + 2) % 3;
-    if (R) diffIdx = (diffIdx + 1) % 3;
+    if (L) cycleUnlockedDiff(-1);
+    if (R) cycleUnlockedDiff(1);
     if (k === ' ' || k === 'Enter') startGame();
     if (k === 'c' || k === 'C') openAch();
     if (k === 'l' || k === 'L') openLB('title');
@@ -1031,7 +1042,7 @@ function update(dt) {
   const C = CHARS[charIdx];
   // 角色 pace 控制起步與最高速度，accel 控制多久進入後期速度。
   const sp = G.tut ? 0 : Math.min(1, G.t / (CFG.rampTime / C.accel));
-  const baseSpeed = CFG.baseSpeed * C.pace, maxSpeed = CFG.maxSpeed * C.pace;
+  const baseSpeed = CFG.baseSpeed * C.pace * D.startSpeed, maxSpeed = CFG.maxSpeed * C.pace;
   G.speedMix = 1 - (1 - sp) * (1 - sp);
   G.speed = baseSpeed + (maxSpeed - baseSpeed) * G.speedMix;
   if (G.tut) { G.speed = 130; G.speedMix = 0; }
@@ -1083,7 +1094,7 @@ function update(dt) {
   } else G.quitT = 0;
 
   // 移動（戒斷時會手抖、反應變慢）
-  const wd = withdrawal();
+  const wd = withdrawal(), wdShake = wd * D.withdrawalShake;
   if (!G.trap) {
     // 靈敏度跟著捲動速度：一開始比較穩，越跑越快、越跟手
     const r = G.speedMix;
@@ -1100,7 +1111,7 @@ function update(dt) {
     const k = lerp(CFG.follow) * boost * gasp * (1 - 0.75 * wd);
     const lim = lerp(CFG.maxMove) * boost * gasp * dt;
     P.x += clamp((P.tx - P.x) * Math.min(1, k * dt), -lim, lim);
-    if (wd > 0) P.x += (Math.random() - .5) * wd * 6;
+    if (wdShake > 0) P.x += (Math.random() - .5) * wdShake * 6;
     P.x = clamp(P.x, 24, W - 24);
     P.walk += dt * G.speed / 22;
   }
@@ -1146,7 +1157,7 @@ function update(dt) {
       if (!o.reacted && nearSmoker) {
         o.reacted = true;
         const side = o.x === P.x ? (Math.random() < .5 ? -1 : 1) : Math.sign(o.x - P.x);
-        if (Math.random() < .3) {
+        if (D.bystanderAttack && Math.random() < .3) {
           o.mode = 'charge';
           o.vx = -side * rand(205, 275);
           pop('💢 路人：不要一直噴二手菸！', o.x, o.y - 50, '#ffd8a8', 16);
@@ -1459,6 +1470,7 @@ function end(cause) {
     careerScore += G.careerGain;
     localStorage.setItem('smokerun_career_score', Math.round(careerScore));
     G.newChars = CHARS.filter(c => c.unlock > before && c.unlock <= careerScore);
+    G.newDiffs = DIFFS.filter(d => d.unlock > before && d.unlock <= careerScore);
   }
   checkAch();
   toasts = [];
@@ -1941,62 +1953,41 @@ function drawCatPlayer(ti) {
   ctx.restore();
 }
 
-// 肺葉輪廓、支氣管與葡萄串狀肺泡，讓傷害不再只是幾顆紅點。
-function drawAlveoliLobe(side, damage) {
-  const cx = side < 0 ? 43 : W - 43, cy = 365;
+// 把肺泡放在玩家附近，排成由上往下破裂的單一直串。
+function drawAlveoliChain(damage) {
+  const cx = 29, y0 = H - 326, step = 28, count = 8;
+  const broken = damage > 0 ? Math.ceil(damage * count) : 0;
   ctx.save();
-  ctx.translate(cx, cy); ctx.scale(side, 1);
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = `rgba(255,205,205,${.52 + damage * .28})`; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(cx, y0 - 24); ctx.lineTo(cx, y0 + step * (count - 1) + 9); ctx.stroke();
+  txtS('肺泡 ↓', cx + 2, y0 - 38, 11, damage > .55 ? '#ff8787' : '#ffc9c9');
 
-  // 半透明肺葉外型
-  ctx.fillStyle = `rgba(255,145,160,${.08 + damage * .12})`;
-  ctx.strokeStyle = `rgba(255,185,195,${.28 + damage * .34})`;
-  ctx.lineWidth = 2.2;
-  ctx.beginPath();
-  ctx.moveTo(1, -77);
-  ctx.bezierCurveTo(-24, -69, -35, -42, -34, -8);
-  ctx.bezierCurveTo(-34, 31, -25, 69, -2, 76);
-  ctx.bezierCurveTo(22, 80, 31, 52, 28, 24);
-  ctx.bezierCurveTo(26, 2, 17, -17, 11, -37);
-  ctx.bezierCurveTo(8, -51, 8, -68, 1, -77);
-  ctx.closePath(); ctx.fill(); ctx.stroke();
-
-  // 氣管與分枝
-  ctx.strokeStyle = `rgba(255,205,205,${.45 + damage * .3})`;
-  ctx.lineWidth = 4; ctx.lineCap = 'round';
-  const branches = [
-    [[3,-79],[4,-48]], [[4,-48],[-13,-27]], [[4,-48],[16,-23]],
-    [[-13,-27],[-20,-3]], [[-13,-27],[-24,-36]],
-    [[16,-23],[20,2]], [[16,-23],[24,-35]],
-    [[-20,-3],[-18,26]], [[20,2],[15,31]], [[-18,26],[-9,50]],
-  ];
-  for (const [[x1,y1],[x2,y2]] of branches) { ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); }
-
-  // 每個分枝末端是一串像葡萄的肺泡。
-  const clusters = [[-25,-39],[27,-38],[-26,2],[25,4],[-20,31],[17,34],[-7,55]];
-  const bubbles = [[0,0],[-6,-3],[6,-3],[-4,5],[5,5]];
-  const total = clusters.length * bubbles.length;
-  const broken = Math.floor(damage * total);
-  clusters.forEach(([gx, gy], ci) => bubbles.forEach(([dx, dy], bi) => {
-    const idx = ci * bubbles.length + bi;
-    const dead = idx < broken;
-    const pulse = G.alveoliPop > 0 && idx === Math.max(0, broken - 1) ? G.alveoliPop : 0;
-    const ax = gx + dx, ay = gy + dy, r = dead ? 3.3 : 4.7 + pulse * 2.5;
-    ctx.fillStyle = dead ? `rgba(82,29,34,${.48 + damage * .34})` : `rgba(255,191,198,${.38 + damage * .28})`;
-    ctx.beginPath(); ctx.ellipse(ax, ay, r, dead ? 2.2 : r, dead ? .35 : 0, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = dead ? '#ff6b6b' : 'rgba(255,225,225,.72)'; ctx.lineWidth = dead ? 1.1 : .8; ctx.stroke();
-    if (dead && idx % 3 === 0) {
-      ctx.strokeStyle = 'rgba(255,120,120,.8)'; ctx.lineWidth = .9;
-      ctx.beginPath(); ctx.moveTo(ax - 3, ay - 3); ctx.lineTo(ax, ay); ctx.lineTo(ax + 3, ay - 3); ctx.moveTo(ax, ay); ctx.lineTo(ax - 1, ay + 3); ctx.stroke();
+  for (let i = 0; i < count; i++) {
+    const cy = y0 + i * step, branch = i % 2 ? 7 : -7, dead = i < broken;
+    const pulse = G.alveoliPop > 0 && i === Math.max(0, broken - 1) ? G.alveoliPop : 0;
+    ctx.strokeStyle = dead ? 'rgba(130,55,62,.8)' : 'rgba(255,205,205,.72)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + branch, cy); ctx.stroke();
+    const ax = cx + branch, r = dead ? 4.2 : 5.2 + pulse * 1.8;
+    const bubbles = [[0,0],[-5,-4],[5,-4],[-5,5],[5,5]];
+    for (const [dx, dy] of bubbles) {
+      ctx.fillStyle = dead ? `rgba(70,28,34,${.72 + damage * .2})` : `rgba(255,177,188,${.65 + damage * .2})`;
+      ctx.beginPath(); ctx.ellipse(ax + dx, cy + dy, r, dead ? 2.5 : r, dead ? .35 : 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = dead ? '#ff6b6b' : 'rgba(255,240,242,.9)'; ctx.lineWidth = 1; ctx.stroke();
     }
-  }));
-
-  if (G.alveoliPop > 0 && broken > 0) {
-    const [bx, by] = clusters[Math.floor((broken - 1) / bubbles.length) % clusters.length];
-    ctx.strokeStyle = `rgba(255,80,80,${G.alveoliPop})`; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(bx, by, 12 + (1 - G.alveoliPop) * 16, 0, Math.PI * 2); ctx.stroke();
+    if (dead) {
+      ctx.strokeStyle = '#ff8787'; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(ax - 8, cy - 8); ctx.lineTo(ax, cy); ctx.lineTo(ax + 8, cy - 8); ctx.moveTo(ax, cy); ctx.lineTo(ax - 2, cy + 8); ctx.stroke();
+    }
+    if (pulse > 0) {
+      ctx.strokeStyle = `rgba(255,80,80,${pulse})`; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(ax, cy, 13 + (1 - pulse) * 14, 0, Math.PI * 2); ctx.stroke();
+    }
   }
   ctx.restore();
-  txtS('肺泡', cx, cy + 90, 11, damage > .55 ? '#ff8787' : '#ffc9c9');
+  ctx.fillStyle = 'rgba(35,20,25,.76)'; rr(9, H - 105, 86, 25, 12); ctx.fill();
+  ctx.strokeStyle = damage > .7 ? '#ff6b6b' : '#ffa8b5'; ctx.lineWidth = 1.5; ctx.stroke();
+  txt(`肺損 ${Math.round(G.lung)}%`, 52, H - 92, 12, damage > .7 ? '#ff8787' : '#ffc9c9');
 }
 
 // 肺損傷視覺：煙霧只沿著左右兩側緩慢累積，保留中央遊戲視野。
@@ -2031,12 +2022,10 @@ function drawLungSmoke() {
     }
 
   }
-  drawAlveoliLobe(-1, damage);
-  drawAlveoliLobe(1, damage);
+  drawAlveoliChain(damage);
   ctx.restore();
 
-  if (damage > .28) txtS(`肺泡受損 ${Math.round(G.lung)}%`, W / 2, 158, 15, damage > .7 ? '#ff8787' : '#ffc9c9');
-  if (damage > 0.82) txtS('⚠️ 肺損傷嚴重…別再抽了', W / 2, 190, 20, '#ff8787');
+  if (damage > 0.82) txtS('⚠️ 肺損傷嚴重…別再抽了', W / 2, H - 90, 19, '#ff8787');
 }
 
 function drawWeedFX() {
@@ -2367,12 +2356,12 @@ function drawPlayerBody(ti = 3, car = false) {
 }
 
 function drawWorld() {
-  const wd = withdrawal();
+  const wd = withdrawal(), wdShake = wd * D.withdrawalShake;
   ctx.save();
   let sx = 0, sy = 0;
   if (state === 'play') {
     if (G.shake > 0) { sx += rand(-6, 6) * G.shake / 0.4; sy += rand(-6, 6) * G.shake / 0.4; }
-    if (wd > 0) { sx += rand(-1, 1) * wd * 4; sy += rand(-1, 1) * wd * 4; }
+    if (wdShake > 0) { sx += rand(-1, 1) * wdShake * 4; sy += rand(-1, 1) * wdShake * 4; }
   }
   ctx.translate(sx, sy);
   drawBg();
@@ -2407,7 +2396,7 @@ function drawWorld() {
   if (wd > 0) {
     ctx.fillStyle = `rgba(50,50,60,${wd * 0.45})`;
     ctx.fillRect(0, 0, W, H);
-    txtS('戒斷中……手在抖', W / 2 + rand(-2, 2) * wd, 135, 22, '#ffb3b3');
+    txtS('戒斷中……手在抖', W / 2 + rand(-2, 2) * wdShake, 135, 22, '#ffb3b3');
   }
   if (G.quitT > 4) {
     ctx.globalAlpha = Math.min(1, (G.quitT - 4) / 2);
@@ -2502,6 +2491,18 @@ function btn(x, y, w, h, label, color, fn, size = 20, textColor = '#fff') {
   ctx.fillStyle = 'rgba(255,255,255,.22)'; rr(x + 6, y + 4, w - 12, h / 2 - 4, h / 4); ctx.fill();
   txt(label, x + w / 2, y + h / 2 + 1, size, textColor);
   if (fn) button(x, y, w, h, fn);
+}
+
+function lockedBtn(x, y, w, h, label, size = 11) {
+  ctx.save();
+  ctx.fillStyle = '#343a40'; rr(x, y, w, h, Math.min(10, h / 3)); ctx.fill();
+  ctx.save(); rr(x, y, w, h, Math.min(10, h / 3)); ctx.clip();
+  ctx.strokeStyle = 'rgba(255,255,255,.1)'; ctx.lineWidth = 5;
+  for (let sx = x - h; sx < x + w + h; sx += 14) { ctx.beginPath(); ctx.moveTo(sx, y + h); ctx.lineTo(sx + h, y); ctx.stroke(); }
+  ctx.restore();
+  ctx.setLineDash([5, 4]); ctx.strokeStyle = '#868e96'; ctx.lineWidth = 2; rr(x, y, w, h, Math.min(10, h / 3)); ctx.stroke(); ctx.setLineDash([]);
+  txt(`🔒 ${label}`, x + w / 2, y + h / 2 + 1, size, '#dee2e6');
+  ctx.restore();
 }
 
 function emoji(s, x, y, size) {
@@ -2709,8 +2710,8 @@ function drawTitle() {
   emoji('🚭', x + 345, y + 280, 16); txt('禁菸區', x + 345, y + 300, 11, '#e63946');
 
   const lines = [
-    '🫁 肺泡會隨損傷塌陷；不抽才會慢慢恢復',
-    '😷 路人會逃離二手菸；捲菸內容也不明',
+    '🫁 下方肺泡會由上往下破；不抽才會慢慢恢復',
+    '😷 路人會亂跑、逃離，甚至衝撞抽菸者',
   ];
   lines.forEach((s, i) => txt(s, x + 22, y + 346 + i * 20, 13, '#333', 'left', 'normal'));
 
@@ -2719,25 +2720,36 @@ function drawTitle() {
   const rw = (w - 40 - 16) / 3;
   CHARS.forEach((c, i) => {
     const rx = x + 20 + i * (rw + 8), ry = y + 414, rh = 66, unlocked = charUnlocked(i), sel = unlocked && i === charIdx;
-    ctx.fillStyle = sel ? c.color : unlocked ? '#f1f3f5' : '#dee2e6'; rr(rx, ry, rw, rh, 12); ctx.fill();
-    ctx.strokeStyle = sel ? '#2b2b2b' : unlocked ? '#ced4da' : '#adb5bd'; ctx.lineWidth = sel ? 3 : 2; ctx.stroke();
+    ctx.fillStyle = sel ? c.color : unlocked ? '#fff' : '#343a40'; rr(rx, ry, rw, rh, 12); ctx.fill();
+    if (!unlocked) {
+      ctx.save(); rr(rx, ry, rw, rh, 12); ctx.clip(); ctx.strokeStyle = 'rgba(255,255,255,.1)'; ctx.lineWidth = 5;
+      for (let sx = rx - rh; sx < rx + rw + rh; sx += 15) { ctx.beginPath(); ctx.moveTo(sx, ry + rh); ctx.lineTo(sx + rh, ry); ctx.stroke(); }
+      ctx.restore();
+    }
+    ctx.strokeStyle = sel ? '#2b2b2b' : unlocked ? c.color : '#868e96'; ctx.lineWidth = sel ? 3 : 2; ctx.setLineDash(unlocked ? [] : [5, 4]); rr(rx, ry, rw, rh, 12); ctx.stroke(); ctx.setLineDash([]);
     emoji(unlocked ? c.icon : '🔒', rx + 25, ry + 23, 25);
-    txt(c.name, rx + rw - 9, ry + 20, 16, sel ? '#fff' : unlocked ? '#333' : '#868e96', 'right');
-    txt(unlocked ? c.desc : `差 ${fmt(c.unlock - careerScore)} 爽度`, rx + rw / 2, ry + 48, 10, sel ? '#fff' : '#777', 'center', 'normal');
+    txt(unlocked ? c.name : `${c.name}未解鎖`, rx + rw - 7, ry + 20, unlocked ? 16 : 12, sel ? '#fff' : unlocked ? c.color : '#f1f3f5', 'right');
+    txt(unlocked ? c.desc : `需 ${fmt(c.unlock)} 爽度`, rx + rw / 2, ry + 48, 10, sel ? '#fff' : unlocked ? '#495057' : '#ced4da', 'center', 'normal');
     if (unlocked) button(rx, ry, rw, rh, () => { charIdx = i; localStorage.setItem('smokerun_char', i); sfx('click'); });
   });
 
   // 難度選擇
-  txt('選擇難度', W / 2, y + 500, 16, '#222');
+  txt('選擇難度 · 同樣用生涯爽度解鎖', W / 2, y + 500, 16, '#222');
   const cw = (w - 40 - 16) / 3;
   DIFFS.forEach((d, i) => {
-    const cx = x + 20 + i * (cw + 8), cy = y + 516, ch = 80, sel = i === diffIdx;
-    ctx.fillStyle = sel ? d.color : '#f1f1f1'; rr(cx, cy, cw, ch, 14); ctx.fill();
-    ctx.strokeStyle = sel ? '#2b2b2b' : '#ccc'; ctx.lineWidth = sel ? 3 : 2; ctx.stroke();
-    emoji(d.icon, cx + cw / 2, cy + 19, 23);
-    txt(d.name, cx + cw / 2, cy + 42, 16, sel ? '#fff' : '#333');
-    txt(d.d1, cx + cw / 2, cy + 64, 11, sel ? '#fff' : '#777', 'center', 'normal');
-    button(cx, cy, cw, ch, () => { diffIdx = i; sfx('click'); });
+    const cx = x + 20 + i * (cw + 8), cy = y + 516, ch = 80, unlocked = diffUnlocked(i), sel = unlocked && i === diffIdx;
+    ctx.fillStyle = sel ? d.color : unlocked ? '#fff' : '#343a40'; rr(cx, cy, cw, ch, 14); ctx.fill();
+    if (!unlocked) {
+      ctx.save(); rr(cx, cy, cw, ch, 14); ctx.clip(); ctx.strokeStyle = 'rgba(255,255,255,.1)'; ctx.lineWidth = 5;
+      for (let sx = cx - ch; sx < cx + cw + ch; sx += 15) { ctx.beginPath(); ctx.moveTo(sx, cy + ch); ctx.lineTo(sx + ch, cy); ctx.stroke(); }
+      ctx.restore();
+    }
+    ctx.strokeStyle = sel ? '#2b2b2b' : unlocked ? d.color : '#868e96'; ctx.lineWidth = sel ? 3 : 2; ctx.setLineDash(unlocked ? [] : [5, 4]); rr(cx, cy, cw, ch, 14); ctx.stroke(); ctx.setLineDash([]);
+    emoji(unlocked ? d.icon : '🔒', cx + cw / 2, cy + 18, 22);
+    txt(unlocked ? d.name : '未解鎖', cx + cw / 2, cy + 39, 15, sel ? '#fff' : unlocked ? d.color : '#f1f3f5');
+    txt(unlocked ? d.d1 : `需 ${fmt(d.unlock)} 爽度`, cx + cw / 2, cy + 57, 10, sel ? '#fff' : unlocked ? '#495057' : '#ced4da', 'center', 'normal');
+    if (unlocked) txt(d.d2, cx + cw / 2, cy + 71, 8, sel ? '#fff' : '#6c757d', 'center', 'normal');
+    if (unlocked) button(cx, cy, cw, ch, () => { diffIdx = i; localStorage.setItem('smokerun_diff', i); sfx('click'); });
   });
 
   btn(x + 50, y + 606, w - 100, 34, player.name ? `✏️ 暱稱：${player.name}` : '✏️ 先設定暱稱', player.name ? '#4dabf7' : '#e67700', () => nameOpen(() => submitPlayer()), 14);
@@ -2790,13 +2802,17 @@ function drawEndingIntro() {
   wrapText(e.trigger, W - 100, 16).slice(0, 2)
     .forEach((line, i) => txt(line, W / 2, ry + 50 + i * 21, 16, '#fff', 'center', 'normal'));
 
-  if (G.newChars?.length && t > .55) {
+  const unlockedNow = [
+    ...(G.newChars || []).map(c => `${c.icon} 角色「${c.name}」`),
+    ...(G.newDiffs || []).map(d => `${d.icon} 難度「${d.name}」`),
+  ];
+  if (unlockedNow.length && t > .55) {
     const uy = H - 178, pulse = 1 + Math.sin(t * 6) * .025;
     ctx.save(); ctx.translate(W / 2, uy + 31); ctx.scale(pulse, pulse);
     ctx.fillStyle = '#fff3bf'; rr(-(W - 92) / 2, -31, W - 92, 62, 15); ctx.fill();
     ctx.strokeStyle = '#f59f00'; ctx.lineWidth = 3; ctx.stroke();
-    txt('🔓 新角色解鎖！', 0, -11, 18, '#9c5700');
-    txt(`${G.newChars.map(c => `${c.icon} ${c.name}`).join('、')}　結算後可直接選擇`, 0, 14, 15, '#5f3b00');
+    txt('🔓 新內容解鎖！', 0, -11, 18, '#9c5700');
+    txt(`${unlockedNow.join('、')}　結算後可直接選擇`, 0, 14, unlockedNow.length > 1 ? 12 : 14, '#5f3b00');
     ctx.restore();
   }
 
@@ -2822,8 +2838,9 @@ function drawOver() {
   txt(`${ending.icon} ${ending.title}`, W / 2, y + 36, 26, quit ? '#2b8a3e' : '#c1121f');
   txt(ending.detail, W / 2, y + 68, 14, '#555', 'center', 'normal');
   txt(`${C.icon} ${C.name} · ${D.icon} ${D.name} · 存活 ${Math.floor(G.t)} 秒 · 生涯爽度 +${fmt(G.careerGain)}`, W / 2, y + 88, 11, '#888');
-  const unlockText = G.newChars?.length ? ` · 🔓 解鎖${G.newChars.map(c => c.name).join('、')}` : '';
-  txt(`${G.bystandersFled ? `😷 ${G.bystandersFled} 人逃離二手菸` : '😷 沒有路人逃離'}${G.newBest ? ' · 🎊 角色新紀錄！' : ''}${unlockText}`, W / 2, y + 103, 11, G.newChars?.length || G.newBest ? '#e67700' : '#999');
+  const unlockNames = [...(G.newChars || []), ...(G.newDiffs || [])].map(v => v.name);
+  const unlockText = unlockNames.length ? ` · 🔓 解鎖${unlockNames.join('、')}` : '';
+  txt(`${G.bystandersFled ? `😷 ${G.bystandersFled} 人逃離二手菸` : '😷 沒有路人逃離'}${G.newBest ? ' · 🎊 角色新紀錄！' : ''}${unlockText}`, W / 2, y + 103, 11, unlockNames.length || G.newBest ? '#e67700' : '#999');
   // 排行榜狀態（顯示在標題右上角）
   if (lbOn()) {
     const l = G.lb, s = !player.name ? '' : !l ? '' : l.st === 'up' ? '上傳中…' : l.st === 'err' ? '上傳失敗' : `${C.name}第 ${l.rank} 名`;
@@ -2899,17 +2916,20 @@ function drawOver() {
     const labelW = 58, gap = 5, ow = (w - 40 - labelW - gap * 2) / 3, ox = x + 20 + labelW;
     txt('下局難度', x + 22, by + 106, 11, '#495057', 'left', 'normal');
     DIFFS.forEach((d, i) => {
-      const sel = i === diffIdx;
-      btn(ox + i * (ow + gap), by + 90, ow, 30, `${d.icon}${d.name}`, sel ? d.color : '#adb5bd', () => {
+      const unlocked = diffUnlocked(i), sel = unlocked && i === diffIdx, bx = ox + i * (ow + gap);
+      if (unlocked) btn(bx, by + 90, ow, 30, `${d.icon}${d.name}`, sel ? d.color : '#fff', () => {
         diffIdx = i; localStorage.setItem('smokerun_diff', i); sfx('click');
-      }, 11);
+      }, 11, sel ? '#fff' : d.color);
+      else lockedBtn(bx, by + 90, ow, 30, `${d.name} ${d.unlock / 1000}K`, 9);
     });
     txt('下局角色', x + 22, by + 144, 11, '#495057', 'left', 'normal');
     CHARS.forEach((c, i) => {
       const unlocked = charUnlocked(i), sel = unlocked && i === charIdx;
-      btn(ox + i * (ow + gap), by + 128, ow, 30, `${unlocked ? c.icon : '🔒'}${c.name}`, sel ? c.color : unlocked ? '#868e96' : '#ced4da', unlocked ? () => {
+      const bx = ox + i * (ow + gap);
+      if (unlocked) btn(bx, by + 128, ow, 30, `${c.icon}${c.name}`, sel ? c.color : '#fff', () => {
         charIdx = i; localStorage.setItem('smokerun_char', i); sfx('click');
-      } : null, 11, unlocked || sel ? '#fff' : '#6c757d');
+      }, 11, sel ? '#fff' : c.color);
+      else lockedBtn(bx, by + 128, ow, 30, `${c.name} ${c.unlock / 1000}K`, 9);
     });
     const fy = by + 172;
     btn(x + 20, fy, 142, 40, '▶ 用此設定再跑', '#e03131', newGame, 15);
