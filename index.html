@@ -18,6 +18,7 @@
   #nameBox .err { min-height: 20px; margin: 8px 0 4px; font-size: 13px; color: #e03131; }
   #nameBox .row { display: flex; gap: 10px; }
   #nameBox button { flex: 1; font-size: 17px; font-weight: bold; padding: 11px 0; border: 2.5px solid #2b2b2b; border-radius: 24px; cursor: pointer; font-family: inherit; }
+  #nameRandom { background: #ffd43b; color: #343a40; }
   #nameOk { background: #1c7ed6; color: #fff; }
   #nameCancel { background: #dee2e6; color: #333; }
   #nameBox button:disabled { opacity: .6; cursor: default; }
@@ -28,10 +29,10 @@
 <div id="nameBox" hidden>
   <div class="card">
     <h3>📊 輸入暱稱</h3>
-    <p>上排行榜用，最多 12 個字，不用註冊帳號</p>
+    <p>上排行榜用；不想取名可直接確認隨機暱稱</p>
     <input id="nameInput" maxlength="12" autocomplete="off" placeholder="例如：老菸槍阿明">
     <div class="err" id="nameErr"></div>
-    <div class="row"><button id="nameCancel">取消</button><button id="nameOk">確定</button></div>
+    <div class="row"><button id="nameCancel">取消</button><button id="nameRandom">🎲 換一個</button><button id="nameOk">確定</button></div>
   </div>
 </div>
 <script>
@@ -39,14 +40,15 @@
 
 // ====== 基本設定 ======
 const W = 450, H = 800;
-const GAME_VERSION = '1.1.0-beta.8';
+const GAME_VERSION = '1.1.0-beta.9';
 const FONT = '"Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif';
 const cv = document.getElementById('c');
 const ctx = cv.getContext('2d');
 let scale = 1, dpr = 1;
 
 function resize() {
-  dpr = window.devicePixelRatio || 1;
+  // 2 倍像素已足以保持文字清晰；限制超高 DPI 可大幅降低每幀 Canvas 填色量。
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
   scale = Math.min(innerWidth / W, innerHeight / H);
   cv.style.width = W * scale + 'px';
   cv.style.height = H * scale + 'px';
@@ -555,10 +557,20 @@ function loadLB() {
 const nameBox = document.getElementById('nameBox');
 const nameInput = document.getElementById('nameInput');
 const nameErr = document.getElementById('nameErr');
+const RANDOM_NAME_HEADS = ['戒菸', '無菸', '清肺', '忍住', '深呼吸', '今天不抽', '街角', '健康'];
+const RANDOM_NAME_TAILS = ['小勇者', '阿明', '跑者', '貓奴', '省錢王', '好青年', '散步哥', '小隊長'];
+const randomNickname = () => RANDOM_NAME_HEADS[Math.floor(Math.random() * RANDOM_NAME_HEADS.length)]
+  + RANDOM_NAME_TAILS[Math.floor(Math.random() * RANDOM_NAME_TAILS.length)];
+function setRandomNickname() {
+  nameInput.value = randomNickname();
+  nameErr.textContent = '';
+  nameInput.focus();
+  nameInput.select();
+}
 let nameAfter = null;
 function nameOpen(after) {
   nameAfter = after;
-  nameInput.value = player.name;
+  nameInput.value = player.name || randomNickname();
   nameErr.textContent = '';
   nameBox.hidden = false;
   input.left = input.right = false;
@@ -577,6 +589,11 @@ function nameSubmit() {
 }
 document.getElementById('nameOk').onclick = nameSubmit;
 document.getElementById('nameCancel').onclick = nameClose;
+document.getElementById('nameRandom').onclick = setRandomNickname;
+nameInput.addEventListener('keydown', e => {
+  e.stopPropagation();
+  if (e.key === 'Enter') nameSubmit();
+});
 
 const withdrawal = () => (G && G.nic < 20 ? (20 - G.nic) / 20 : 0);
 // 喘氣程度：肺損傷 70% 開始，100% 時為 1
@@ -719,6 +736,11 @@ function addLung(v) {
 }
 
 function smoke(kind, x, y, silent = false) {
+  // 懂事模式必須攔住所有吸菸入口，包含地圖物件、事件選項與自動效果。
+  if (G.good > 0) {
+    if (!silent) pop('😇 懂事中：這根不抽！', x, y - 20, '#b2f2bb', 18);
+    return false;
+  }
   const it = ITEMS[kind];
   const weedRoll = kind === 'roll' && Math.random() < CFG.rollWeedChance;
   G.nic = Math.min(100, G.nic + it.nic * D.gain);
@@ -763,6 +785,7 @@ function smoke(kind, x, y, silent = false) {
     fine(2000, '禁菸區吸菸！罰 NT$2,000');
   }
   if (G.inHeritage) triggerHeritageParody();
+  return true;
 }
 
 function triggerHeritageParody() {
@@ -798,6 +821,8 @@ function becomeGood(o) {
   G.tungs++;
   G.zombie = 0;
   G.wanted = 0;
+  G.smokeT = 0;
+  G.parts = G.parts.filter(p => p.kind !== 'playerSmoke');
   sfx('heal');
   pop('😇 董氏基金會來了！', W / 2, 300, '#ffe066', 26);
   pop('我…我懂事了', P.x, P.y - 90, '#fff', 20);
@@ -873,6 +898,10 @@ function hitEnemy(o) {
     pop('🚔 尿檢呈陽性！直接坐牢', W / 2, 280, '#ff4d4d', 25);
     sfx('hit');
     end('jail');
+    return;
+  }
+  if (o.type === 'police' && G.zombie > 0) {
+    fine(6000, '🧟 喪屍菸彈遭臨檢！罰 NT$6,000（加倍）');
     return;
   }
   // 懂事模式：沒在抽菸，稽查拿你沒轍
@@ -1274,7 +1303,7 @@ function update(dt) {
   // 菸霧粒子
   G.smokeT -= dt;
   if (G.nic > 0 && G.good <= 0 && G.smokeT <= 0) {
-    G.parts.push({ x: P.x + 20, y: P.y - 18, vx: rand(-15, 15), vy: G.speed * 0.45, life: 1, max: 1, r: 3, c: '220,220,220', grow: 10 });
+    G.parts.push({ kind: 'playerSmoke', x: P.x + 20, y: P.y - 18, vx: rand(-15, 15), vy: G.speed * 0.45, life: 1, max: 1, r: 3, c: '220,220,220', grow: 10 });
     G.smokeT = 0.05 + (1 - G.nic / 100) * 0.18;
   }
   if (G.trap && Math.random() < 0.5) {
@@ -2988,28 +3017,28 @@ function drawOver() {
 
   if (G.overT > 2.6) {
     const labelW = 58, gap = 5, ow = (w - 40 - labelW - gap * 2) / 3, ox = x + 20 + labelW;
-    txt('下局難度', x + 22, by + 106, 11, '#495057', 'left', 'normal');
+    txt('下局難度', x + 22, by + 106, 13, '#343a40', 'left');
     DIFFS.forEach((d, i) => {
       const unlocked = diffUnlocked(i), sel = unlocked && i === diffIdx, bx = ox + i * (ow + gap);
-      if (unlocked) btn(bx, by + 90, ow, 30, `${d.icon}${d.name}`, sel ? d.color : '#fff', () => {
+      if (unlocked) btn(bx, by + 87, ow, 36, `${d.icon}${d.name}`, sel ? d.color : '#fff', () => {
         diffIdx = i; localStorage.setItem('smokerun_diff', i); sfx('click');
-      }, 11, sel ? '#fff' : d.color);
-      else lockedBtn(bx, by + 90, ow, 30, `${d.name} ${d.unlock / 1000}K`, 9);
+      }, 14, sel ? '#fff' : d.color);
+      else lockedBtn(bx, by + 87, ow, 36, `${d.name} ${d.unlock / 1000}K`, 12);
     });
-    txt('下局角色', x + 22, by + 144, 11, '#495057', 'left', 'normal');
+    txt('下局角色', x + 22, by + 148, 13, '#343a40', 'left');
     CHARS.forEach((c, i) => {
       const unlocked = charUnlocked(i), sel = unlocked && i === charIdx;
       const bx = ox + i * (ow + gap);
-      if (unlocked) btn(bx, by + 128, ow, 30, `${c.icon}${c.name}`, sel ? c.color : '#fff', () => {
+      if (unlocked) btn(bx, by + 129, ow, 36, `${c.icon}${c.name}`, sel ? c.color : '#fff', () => {
         charIdx = i; localStorage.setItem('smokerun_char', i); sfx('click');
-      }, 11, sel ? '#fff' : c.color);
-      else lockedBtn(bx, by + 128, ow, 30, `${c.name} ${c.unlock / 1000}K`, 9);
+      }, 14, sel ? '#fff' : c.color);
+      else lockedBtn(bx, by + 129, ow, 36, `${c.name} ${c.unlock / 1000}K`, 12);
     });
-    const fy = by + 172;
-    btn(x + 20, fy, 142, 40, '▶ 用此設定再跑', '#e03131', newGame, 15);
-    btn(x + 168, fy, 78, 40, '🏆成就', '#ffd23f', openAch, 12, '#222');
-    btn(x + 252, fy, 78, 40, '📊排行', '#4dabf7', () => openLB('over'), 12);
-    btn(x + 336, fy, 84, 40, '🏠首頁', '#868e96', () => { state = 'title'; }, 12);
+    const fy = by + 174;
+    btn(x + 20, fy, 142, 40, '▶ 用此設定再跑', '#e03131', newGame, 16);
+    btn(x + 168, fy, 78, 40, '🏆成就', '#ffd23f', openAch, 14, '#222');
+    btn(x + 252, fy, 78, 40, '📊排行', '#4dabf7', () => openLB('over'), 14);
+    btn(x + 336, fy, 84, 40, '🏠首頁', '#868e96', () => { state = 'title'; }, 14);
   }
 }
 
