@@ -39,7 +39,7 @@
 
 // ====== 基本設定 ======
 const W = 450, H = 800;
-const GAME_VERSION = '1.1.0-beta.3';
+const GAME_VERSION = '1.1.0-beta.4';
 const FONT = '"Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif';
 const cv = document.getElementById('c');
 const ctx = cv.getContext('2d');
@@ -363,6 +363,9 @@ ACH.push(...[
   { id: 'elder60', icon: '👴', name: '老而彌堅', desc: '使用老人存活 60 秒', c: g => g.char === 'elder' && g.t >= 60 },
   { id: 'punkTycoon', icon: '💎', name: '流氓暴發戶', desc: '使用流氓把身家衝到 $100,000', c: g => g.char === 'punk' && g.maxMoney >= 100000 },
   { id: 'allChars', icon: '🎭', name: '三種人生', desc: '三種角色都至少玩過一局', c: () => achDone.charYoung && achDone.charElder && achDone.charPunk },
+  { id: 'heritageSmoke', icon: '🏛️', name: '古蹟留名', desc: '在古蹟區抽菸並變身增國程', c: g => g.heritageEvents >= 1 },
+  { id: 'heritageHeckled', icon: '🗯️', name: '路人都認得你', desc: '增國程狀態被 3 位路人吐槽', c: g => g.heritageHeckles >= 3 },
+  { id: 'heritageRepeat', icon: '🎤', name: '都是節目效果', desc: '單局在 3 個古蹟區觸發增國程', c: g => g.heritageEvents >= 3 },
 ]);
 
 const ACH_RANKS = {
@@ -374,13 +377,13 @@ const ACH_RANKS = {
 };
 const ACH_LEGENDARY = new Set(['quit', 'cig200', 't420', 'cat100', 'hard120', 'allChars']);
 const ACH_DIAMOND = new Set(['lungCancer', 'alveoliEnd', 'lungDisease', 'streetEnd', 'debtEnd', 'ticketEnd', 'rich', 'money150k', 'score8000', 'weed5', 'zone20', 'heal100', 'punkTycoon', 'unlockPunk', 'flee30']);
-const ACH_GOLD = new Set(['cig100', 't180', 't240', 't300', 'hard60', 'score5000', 'money75k', 'fine20k', 'healthy10', 'zone10', 'cat30', 'cat50', 'jail', 'elder60', 'youngMax']);
-const ACH_SILVER = new Set(['cig25', 'cig50', 'score2000', 'score3k', 't90', 't120', 'money30k', 'earn10k', 'hosp3', 'hosp5', 'heal50', 'zone5', 'zoneStreak5', 'cat10', 'cat20', 'weed3', 'flee10', 'unlockElder']);
+const ACH_GOLD = new Set(['cig100', 't180', 't240', 't300', 'hard60', 'score5000', 'money75k', 'fine20k', 'healthy10', 'zone10', 'cat30', 'cat50', 'jail', 'elder60', 'youngMax', 'heritageRepeat']);
+const ACH_SILVER = new Set(['cig25', 'cig50', 'score2000', 'score3k', 't90', 't120', 'money30k', 'earn10k', 'hosp3', 'hosp5', 'heal50', 'zone5', 'zoneStreak5', 'cat10', 'cat20', 'weed3', 'flee10', 'unlockElder', 'heritageHeckled']);
 ACH.forEach(a => {
   a.rank = ACH_LEGENDARY.has(a.id) ? 'legendary' : ACH_DIAMOND.has(a.id) ? 'diamond' : ACH_GOLD.has(a.id) ? 'gold' : ACH_SILVER.has(a.id) ? 'silver' : 'bronze';
   a.points = ACH_RANKS[a.rank].points;
 });
-if (ACH.length !== 115) throw new Error(`成就數量錯誤：${ACH.length}`);
+if (ACH.length !== 118) throw new Error(`成就數量錯誤：${ACH.length}`);
 let achDone = {};
 try { achDone = JSON.parse(localStorage.getItem('smokerun_ach') || '{}') || {}; } catch (e) {}
 let plays = +(localStorage.getItem('smokerun_plays') || 0);
@@ -425,8 +428,8 @@ function rewardMult() { return G && G.weed > 0 ? 2 : 1; }
 function incomeMult() { return rewardMult() * CHARS[charIdx].income; }
 let bests = {};
 try { bests = JSON.parse(localStorage.getItem('smokerun_bests') || '{}') || {}; } catch (e) {}
-const bestKey = () => `${D.id}:${CHARS[charIdx].id}`;
-const bestOf = () => bests[bestKey()] || (CHARS[charIdx].id === 'young' ? bests[D.id] || 0 : 0);
+const bestKey = () => `${DIFFS[diffIdx].id}:${CHARS[charIdx].id}`;
+const bestOf = () => bests[bestKey()] || (CHARS[charIdx].id === 'young' ? bests[DIFFS[diffIdx].id] || 0 : 0);
 
 function newGame() {
   D = DIFFS[diffIdx];
@@ -444,11 +447,12 @@ function newGame() {
     good: 0, tungs: 0, weed: 0, weeds: 0, urineTests: 0,
     cats: 0, catTotal: 0, catMode: false,
     cleanZones: 0, cleanStreak: 0, maxCleanStreak: 0, zonesEntered: 0, zoneMoney: 0,
+    heritage: 0, heritageEvents: 0, heritageHeckles: 0, inHeritage: false,
     scar: C.scarStart, sinceSmoke: 99, chain: 0, maxChain: 0, hosps: 0, hospCost: 0, healed: 0,
     lungStage: Math.floor(C.lungStart / 10), lungPeak: C.lungStart, alveoliPop: 0,
     firstSmokeT: undefined, lastHospT: -99, relapse: false, tut: null,
     objs: [], pops: [], parts: [],
-    spawnT: 0.6, lastCig: 0, cd: { zone: 5, room: 9, gate: 12, tung: CFG.goodStart, hosp: CFG.hospStart },
+    spawnT: 0.6, lastCig: 0, cd: { zone: 5, heritage: 16, room: 9, gate: 12, tung: CFG.goodStart, hosp: CFG.hospStart },
     wanted: 0, inv: 0, shake: 0, trap: null, inZone: false,
     quitT: 0, smokeT: 0, coughT: 3, bystanderT: 0, bystandersFled: 0,
     over: null, overT: 0, ending: null, satire: '', healthFact: '', careerGain: 0, newChars: [],
@@ -741,6 +745,24 @@ function smoke(kind, x, y, silent = false) {
     G.cleanStreak = 0;
     fine(2000, '禁菸區吸菸！罰 NT$2,000');
   }
+  if (G.inHeritage) triggerHeritageParody();
+}
+
+function triggerHeritageParody() {
+  const zone = G.objs.find(o => o.type === 'heritage' && Math.abs(o.x - P.x) < o.w / 2 && Math.abs(o.y - P.y) < o.h / 2);
+  if (!zone) return;
+  G.heritage = 20;
+  if (!zone.triggered) { zone.triggered = true; G.heritageEvents++; }
+  pop('🏛️ 古蹟抽菸！變身「增國程」20 秒', W / 2, 278, '#ffe066', 23);
+  pop('純屬節目效果：沒有能力加成', W / 2, 314, '#e9ecef', 15);
+  sfx('ach');
+  // 讓路人立刻進場吐槽；只改演出，不動速度、分數或其他數值。
+  for (const side of [-1, 0, 1]) {
+    spawnSmall('bystander', clamp(P.x + side * 120 + rand(-20, 20), 55, W - 55));
+    const b = G.objs.at(-1);
+    b.y = P.y - rand(105, 205);
+    b.seed = Math.floor(rand(0, 99));
+  }
 }
 
 function zombify() {
@@ -926,6 +948,14 @@ function spawn() {
     G.spawnT = 0.5;
     return;
   }
+  if (G.cd.heritage <= 0 && Math.random() < 0.11) {
+    const w = W - 72;
+    G.objs.push({ type: 'heritage', x: W / 2, y: -185, w, h: 310, entered: false, triggered: false, seed: Math.random() * 100 });
+    G.cd.heritage = 34;
+    // 古蹟區內放一根紙菸，讓玩家清楚理解這是可主動觸發的搞笑事件。
+    spawnSmall('cig', rand(86, W - 86));
+    return;
+  }
   if (G.cd.zone <= 0 && Math.random() < 0.12) {
     const w = rand(W * 0.5, W * 0.68), left = Math.random() < .5;
     G.objs.push({ type: 'zone', x: left ? w / 2 : W - w / 2, y: -150, w, h: 280, entered: false, smoked: false, rewarded: false });
@@ -992,6 +1022,10 @@ function update(dt) {
   G.bystanderT = Math.max(0, G.bystanderT - dt);
   G.alveoliPop = Math.max(0, G.alveoliPop - dt);
   G.weed = Math.max(0, G.weed - dt);
+  if (G.heritage > 0) {
+    G.heritage = Math.max(0, G.heritage - dt);
+    if (G.heritage === 0) pop('🎬 節目效果結束，變回原角色', P.x, P.y - 90, '#dee2e6', 17);
+  }
   if (G.zombie > 0) {
     G.zombie -= dt;
     if (G.zombie <= 0) { G.zombie = 0; P.tx = P.x; pop('…呼，清醒了', P.x, P.y - 90, '#b2f2bb'); }
@@ -1079,8 +1113,11 @@ function update(dt) {
       const side = o.x === P.x ? (Math.random() < .5 ? -1 : 1) : Math.sign(o.x - P.x);
       o.vx = side * rand(190, 260);
       if (G.bystanderT <= 0) {
-        const warnings = ['😷 二手菸，離遠一點！', '咳咳…有人在抽菸！', '🚭 路人：先閃了！'];
+        const warnings = G.heritage > 0
+          ? ['🏛️ 路人：古蹟不是吸菸室！', '路人：增國程，又是你？', '導覽員：別讓歷史只剩菸味！']
+          : ['😷 二手菸，離遠一點！', '咳咳…有人在抽菸！', '🚭 路人：先閃了！'];
         pop(warnings[Math.floor(o.seed) % warnings.length], o.x, o.y - 48, '#e7f5ff', 16);
+        if (G.heritage > 0) G.heritageHeckles++;
         G.bystanderT = 1.2;
       }
     }
@@ -1102,6 +1139,12 @@ function update(dt) {
     G.zonesEntered++;
     pop('🚭 撐到出口不抽菸，可得 $500+', P.x, P.y - 110, '#ffe066', 17);
   }
+  const activeHeritage = G.objs.find(o => o.type === 'heritage' && Math.abs(o.x - P.x) < o.w / 2 && Math.abs(o.y - P.y) < o.h / 2);
+  G.inHeritage = !!activeHeritage;
+  if (activeHeritage && !activeHeritage.entered) {
+    activeHeritage.entered = true;
+    pop('🏛️ 古蹟區：別拿文化資產當菸灰缸', W / 2, 260, '#ffe8cc', 18);
+  }
 
   // 碰撞
   // 開跑車時車身比較大，比較好撿東西，但也比較容易被撞
@@ -1118,7 +1161,7 @@ function update(dt) {
       }
       continue;
     }
-    if (o.type === 'zone') continue;
+    if (o.type === 'zone' || o.type === 'heritage') continue;
     if (o.type === 'hosp') { if (!G.trap && !o.used && hitP(o, 0.6)) enterHospital(o); continue; }
     if (o.type === 'room') {
       if (!G.trap && !o.used && hitP(o, 0.55)) {
@@ -1702,6 +1745,38 @@ function drawZone(o) {
   txt(o.smoked ? '挑戰失敗' : '不抽菸 +$500+', o.x, y + 58, 13, '#fff');
 }
 
+function drawHeritage(o) {
+  const x = o.x - o.w / 2, y = o.y - o.h / 2;
+  ctx.save();
+  // 石材地坪與紅磚邊界，和一般禁菸區清楚區分。
+  ctx.fillStyle = 'rgba(189,165,126,.28)'; ctx.fillRect(x, y, o.w, o.h);
+  ctx.strokeStyle = 'rgba(111,78,55,.2)'; ctx.lineWidth = 1;
+  for (let yy = y + 8; yy < y + o.h; yy += 24) {
+    ctx.beginPath(); ctx.moveTo(x, yy); ctx.lineTo(x + o.w, yy); ctx.stroke();
+  }
+  for (let xx = x + 12; xx < x + o.w; xx += 42) {
+    ctx.beginPath(); ctx.moveTo(xx, y); ctx.lineTo(xx, y + o.h); ctx.stroke();
+  }
+  ctx.setLineDash([13, 7]); ctx.strokeStyle = '#8d5524'; ctx.lineWidth = 4; ctx.strokeRect(x, y, o.w, o.h); ctx.setLineDash([]);
+
+  // 上方古蹟立面：三座拱門、柱子與屋簷。
+  const by = y + 48;
+  ctx.fillStyle = '#a44a3f'; rr(x + 18, by, o.w - 36, 74, 6); ctx.fill();
+  ctx.fillStyle = '#d9b382'; ctx.fillRect(x + 12, by - 10, o.w - 24, 13);
+  ctx.fillStyle = '#75402c'; ctx.fillRect(x + 7, by - 17, o.w - 14, 9);
+  for (let i = 0; i < 3; i++) {
+    const ax = x + 58 + i * (o.w - 116) / 2;
+    ctx.fillStyle = '#3f352f'; ctx.beginPath(); ctx.arc(ax, by + 42, 18, Math.PI, 0); ctx.fill(); ctx.fillRect(ax - 18, by + 42, 36, 28);
+    ctx.fillStyle = '#e6c9a2'; ctx.fillRect(ax - 28, by + 7, 8, 65); ctx.fillRect(ax + 20, by + 7, 8, 65);
+  }
+  ctx.fillStyle = '#fff8e8'; rr(o.x - 78, y + 134, 156, 31, 15); ctx.fill();
+  ctx.strokeStyle = '#8d5524'; ctx.lineWidth = 2; ctx.stroke();
+  txt('🏛️ 國定古蹟區', o.x, y + 150, 17, '#6f3e24');
+  ctx.fillStyle = o.triggered ? '#7950f2' : '#e8590c'; rr(o.x - 105, y + 175, 210, 26, 13); ctx.fill();
+  txt(o.triggered ? '增國程節目錄製中' : '抽菸會留下錯誤的歷史', o.x, y + 188, 13, '#fff');
+  ctx.restore();
+}
+
 function drawRoom(o) {
   const x = o.x - o.w / 2, y = o.y - o.h / 2, t = now();
   ctx.fillStyle = 'rgba(170,210,240,.28)'; rr(x, y, o.w, o.h, 10); ctx.fill();
@@ -1942,9 +2017,46 @@ function drawWeedFX() {
   txtS(`🌈 迷幻中：爽度、收入 ×2　${G.weed.toFixed(1)}s`, W / 2, 222, 17, `hsl(${(G.t * 120) % 360},100%,75%)`);
 }
 
+function drawZengGuoCheng() {
+  const x = P.x, y = P.y, sw = Math.sin(P.walk);
+  ctx.save();
+  if (G.inv > 0 && Math.floor(G.t * 12) % 2 === 0) ctx.globalAlpha = .42;
+  ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(x, y + 29, 23, 6, 0, 0, Math.PI * 2); ctx.fill();
+  // 綜藝主持人式的亮色西裝與短腿跑姿，維持原本碰撞尺寸。
+  ctx.strokeStyle = '#212529'; ctx.lineWidth = 8; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x - 7, y + 8); ctx.lineTo(x - 9 - sw * 5, y + 25); ctx.moveTo(x + 7, y + 8); ctx.lineTo(x + 9 + sw * 5, y + 25); ctx.stroke();
+  ctx.fillStyle = '#5f3dc4'; rr(x - 21, y - 14, 42, 29, 10); ctx.fill();
+  ctx.fillStyle = '#ffe066'; ctx.beginPath(); ctx.moveTo(x - 8, y - 13); ctx.lineTo(x + 8, y - 13); ctx.lineTo(x, y + 6); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#e8590c'; ctx.beginPath(); ctx.moveTo(x - 5, y - 10); ctx.lineTo(x + 5, y - 10); ctx.lineTo(x, y - 3); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#5f3dc4'; ctx.lineWidth = 7;
+  ctx.beginPath(); ctx.moveTo(x - 17, y - 7); ctx.lineTo(x - 25 - sw * 3, y + 8); ctx.moveTo(x + 17, y - 7); ctx.lineTo(x + 24 + sw * 3, y + 7); ctx.stroke();
+  ctx.fillStyle = '#f1c27d'; circle(x - 26 - sw * 3, y + 9, 4); circle(x + 25 + sw * 3, y + 8, 4);
+
+  // 圓臉、旁分短髮與濃眉是「增國程」原創戲仿的辨識點。
+  ctx.fillStyle = '#f1c27d'; circle(x, y - 31, 17);
+  ctx.fillStyle = '#26201c';
+  ctx.beginPath(); ctx.arc(x, y - 34, 17.5, Math.PI * 1.02, Math.PI * 1.95); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x - 15, y - 39); ctx.quadraticCurveTo(x - 3, y - 52, x + 14, y - 42); ctx.lineTo(x + 5, y - 38); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#3b2f2f'; ctx.lineWidth = 2.2;
+  ctx.beginPath(); ctx.moveTo(x - 11, y - 34); ctx.lineTo(x - 3, y - 36); ctx.moveTo(x + 3, y - 36); ctx.lineTo(x + 11, y - 34); ctx.stroke();
+  ctx.fillStyle = '#222'; circle(x - 6, y - 31, 2); circle(x + 6, y - 31, 2);
+  ctx.strokeStyle = '#8a4538'; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.arc(x, y - 23, 6, .1, Math.PI - .1); ctx.stroke();
+  // 古蹟梗仍以抽菸觸發，所以保留嘴角紙菸。
+  ctx.fillStyle = '#fafaf5'; ctx.fillRect(x + 5, y - 24, 15, 3);
+  ctx.fillStyle = '#ff5a1f'; ctx.fillRect(x + 20, y - 24, 3, 3);
+  if (Math.sin(G.t * 1.4) > .25) {
+    ctx.fillStyle = 'rgba(255,255,255,.94)'; rr(x - 78, y - 93, 156, 27, 12); ctx.fill();
+    ctx.strokeStyle = '#7950f2'; ctx.lineWidth = 2; ctx.stroke();
+    txt('先問：這裡是古蹟嗎？', x, y - 80, 13, '#4c2a85');
+  }
+  txtS(`增國程 🎤 ${G.heritage.toFixed(1)}s`, x, y + 43, 12, '#ffe066');
+  ctx.restore();
+}
+
 function drawPlayer() {
   const ti = G.tier ?? tierOf(G.money);
   const car = ti === 6 && G.good <= 0;
+  if (G.heritage > 0) { drawZengGuoCheng(); return; }
   if (G.catMode) { drawCatPlayer(ti); return; }
   // 富豪造型的金光，讓高階裝備在高速移動時仍看得出來
   if (ti >= 5 && G.good <= 0) {
@@ -2204,6 +2316,7 @@ function drawWorld() {
   }
   ctx.translate(sx, sy);
   drawBg();
+  for (const o of G.objs) if (o.type === 'heritage') drawHeritage(o);
   for (const o of G.objs) if (o.type === 'zone') drawZone(o);
   for (const o of G.objs) if (o.type === 'room' && !(G.trap && G.trap.o === o)) drawRoom(o);
   for (const o of G.objs) if (o.type === 'hosp') drawHospital(o);
@@ -2254,7 +2367,9 @@ function drawWorld() {
     ctx.fillRect(0, 0, W, H);
     txtS(`😇 懂事模式：不想抽菸 ${G.good.toFixed(1)}s`, W / 2, 150, 18, '#fff3bf');
   }
+  if (G.heritage > 0) txtS(`🎬 增國程演出中：只變外觀 ${G.heritage.toFixed(1)}s`, W / 2, 184, 17, '#ffe066');
   if (G.inZone && !G.trap) txtS('⚠️ 禁菸區：在這裡抽菸會被罰！', W / 2, 115, 16, '#ffadad');
+  if (G.inHeritage && G.heritage <= 0 && !G.trap) txtS('🏛️ 古蹟區：在這裡抽菸會變增國程', W / 2, 142, 15, '#ffe8cc');
   if (G.wanted > 0 && Math.floor(now() * 4) % 2) txtS('🚨 通緝中 🚨', W - 70, 115, 16, '#ff6b6b');
 
   if (G.trap) {
@@ -2615,6 +2730,16 @@ function drawEndingIntro() {
   wrapText(e.trigger, W - 100, 16).slice(0, 2)
     .forEach((line, i) => txt(line, W / 2, ry + 50 + i * 21, 16, '#fff', 'center', 'normal'));
 
+  if (G.newChars?.length && t > .55) {
+    const uy = H - 178, pulse = 1 + Math.sin(t * 6) * .025;
+    ctx.save(); ctx.translate(W / 2, uy + 31); ctx.scale(pulse, pulse);
+    ctx.fillStyle = '#fff3bf'; rr(-(W - 92) / 2, -31, W - 92, 62, 15); ctx.fill();
+    ctx.strokeStyle = '#f59f00'; ctx.lineWidth = 3; ctx.stroke();
+    txt('🔓 新角色解鎖！', 0, -11, 18, '#9c5700');
+    txt(`${G.newChars.map(c => `${c.icon} ${c.name}`).join('、')}　結算後可直接選擇`, 0, 14, 15, '#5f3b00');
+    ctx.restore();
+  }
+
   const progress = clamp(t / 2.2, 0, 1);
   ctx.fillStyle = 'rgba(255,255,255,.14)'; rr(70, H - 86, W - 140, 7, 4); ctx.fill();
   ctx.fillStyle = e.color; rr(70, H - 86, Math.max(8, (W - 140) * progress), 7, 4); ctx.fill();
@@ -2711,11 +2836,26 @@ function drawOver() {
   txt('📞 0800-636363', W / 2, by + 64, 22, '#fff');
 
   if (G.overT > 2.6) {
-    btn(x + 20, by + 100, w - 40, 54, '▶ 再跑一局', '#e03131', newGame, 22);
-    const tw = (w - 40 - 16) / 3;
-    btn(x + 20, by + 166, tw, 42, `🏆 ${fmt(achPoints())}分`, '#ffd23f', openAch, 15, '#222');
-    btn(x + 28 + tw, by + 166, tw, 42, '📊 排行榜', '#4dabf7', () => openLB('over'), 15);
-    btn(x + 36 + tw * 2, by + 166, tw, 42, '🏠 首頁', '#868e96', () => { state = 'title'; }, 15);
+    const labelW = 58, gap = 5, ow = (w - 40 - labelW - gap * 2) / 3, ox = x + 20 + labelW;
+    txt('下局難度', x + 22, by + 106, 11, '#495057', 'left', 'normal');
+    DIFFS.forEach((d, i) => {
+      const sel = i === diffIdx;
+      btn(ox + i * (ow + gap), by + 90, ow, 30, `${d.icon}${d.name}`, sel ? d.color : '#adb5bd', () => {
+        diffIdx = i; localStorage.setItem('smokerun_diff', i); sfx('click');
+      }, 11);
+    });
+    txt('下局角色', x + 22, by + 144, 11, '#495057', 'left', 'normal');
+    CHARS.forEach((c, i) => {
+      const unlocked = charUnlocked(i), sel = unlocked && i === charIdx;
+      btn(ox + i * (ow + gap), by + 128, ow, 30, `${unlocked ? c.icon : '🔒'}${c.name}`, sel ? c.color : unlocked ? '#868e96' : '#ced4da', unlocked ? () => {
+        charIdx = i; localStorage.setItem('smokerun_char', i); sfx('click');
+      } : null, 11, unlocked || sel ? '#fff' : '#6c757d');
+    });
+    const fy = by + 172;
+    btn(x + 20, fy, 142, 40, '▶ 用此設定再跑', '#e03131', newGame, 15);
+    btn(x + 168, fy, 78, 40, '🏆成就', '#ffd23f', openAch, 12, '#222');
+    btn(x + 252, fy, 78, 40, '📊排行', '#4dabf7', () => openLB('over'), 12);
+    btn(x + 336, fy, 84, 40, '🏠首頁', '#868e96', () => { state = 'title'; }, 12);
   }
 }
 
