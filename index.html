@@ -39,7 +39,7 @@
 
 // ====== 基本設定 ======
 const W = 450, H = 800;
-const GAME_VERSION = '1.1.0-beta.4';
+const GAME_VERSION = '1.1.0-beta.5';
 const FONT = '"Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif';
 const cv = document.getElementById('c');
 const ctx = cv.getContext('2d');
@@ -425,7 +425,7 @@ let state = 'title';
 let G = null, P = null;
 let bgOff = 0;
 function rewardMult() { return G && G.weed > 0 ? 2 : 1; }
-function incomeMult() { return rewardMult() * CHARS[charIdx].income; }
+function incomeMult() { return rewardMult() * (G && G.heritage > 0 ? 2 : 1) * CHARS[charIdx].income; }
 let bests = {};
 try { bests = JSON.parse(localStorage.getItem('smokerun_bests') || '{}') || {}; } catch (e) {}
 const bestKey = () => `${DIFFS[diffIdx].id}:${CHARS[charIdx].id}`;
@@ -454,7 +454,7 @@ function newGame() {
     objs: [], pops: [], parts: [],
     spawnT: 0.6, lastCig: 0, cd: { zone: 5, heritage: 16, room: 9, gate: 12, tung: CFG.goodStart, hosp: CFG.hospStart },
     wanted: 0, inv: 0, shake: 0, trap: null, inZone: false,
-    quitT: 0, smokeT: 0, coughT: 3, bystanderT: 0, bystandersFled: 0,
+    quitT: 0, smokeT: 0, coughT: 3, bystanderT: 0, bystandersFled: 0, bystanderHits: 0, bystanderLoss: 0,
     over: null, overT: 0, ending: null, satire: '', healthFact: '', careerGain: 0, newChars: [],
   };
   P = { x: W / 2, tx: W / 2, y: H - 150, w: 34, h: 52, walk: 0 };
@@ -672,6 +672,12 @@ function pop(text, x, y, color = '#fff', size = 18) {
   G.pops.push({ text, x: clamp(x, 80, W - 80), y, color, size, life: 1.2 });
 }
 
+function sprayBills(x, y, count = 8) {
+  for (let i = 0; i < count; i++) {
+    G.parts.push({ x, y, vx: rand(-170, 170), vy: rand(-290, -90), life: 1, max: 1, r: 0, c: '', grow: 0, bill: true, rot: rand(0, 6), g: 420 });
+  }
+}
+
 function fine(amt, msg) {
   const paid = Math.round(amt * CHARS[charIdx].fine);
   G.money -= paid;
@@ -720,9 +726,7 @@ function smoke(kind, x, y, silent = false) {
   G.pops.push({ text: `-$${it.cost}`, x: clamp(x + 34, 50, W - 50), y: y + 4, color: it.cost >= 100 ? '#ff6b6b' : '#ffc9c9', size: it.cost >= 100 ? 22 : 16, life: 1.1 });
   if (it.cost >= 100) {
     const n = it.cost >= 300 ? 10 : 6;
-    for (let i = 0; i < n; i++) {
-      G.parts.push({ x, y, vx: rand(-140, 140), vy: rand(-260, -80), life: 1, max: 1, r: 0, c: '', grow: 0, bill: true, rot: rand(0, 6), g: 380 });
-    }
+    sprayBills(x, y, n);
     G.shake = Math.max(G.shake, 0.15);
   }
   sfx('smoke');
@@ -751,12 +755,12 @@ function smoke(kind, x, y, silent = false) {
 function triggerHeritageParody() {
   const zone = G.objs.find(o => o.type === 'heritage' && Math.abs(o.x - P.x) < o.w / 2 && Math.abs(o.y - P.y) < o.h / 2);
   if (!zone) return;
-  G.heritage = 20;
+  G.heritage = 10;
   if (!zone.triggered) { zone.triggered = true; G.heritageEvents++; }
-  pop('🏛️ 古蹟抽菸！變身「增國程」20 秒', W / 2, 278, '#ffe066', 23);
-  pop('純屬節目效果：沒有能力加成', W / 2, 314, '#e9ecef', 15);
+  pop('🏛️ 古蹟抽菸！變身「增國程」10 秒', W / 2, 278, '#ffe066', 23);
+  pop('💰 很會賺錢：10 秒內所有收入 ×2', W / 2, 314, '#b2f2bb', 16);
   sfx('ach');
-  // 讓路人立刻進場吐槽；只改演出，不動速度、分數或其他數值。
+  // 讓路人立刻進場；新路人和原本街上的路人都會辨識並吐槽。
   for (const side of [-1, 0, 1]) {
     spawnSmall('bystander', clamp(P.x + side * 120 + rand(-20, 20), 55, W - 55));
     const b = G.objs.at(-1);
@@ -809,7 +813,8 @@ function collectMoney(o) {
   const mult = incomeMult();
   if (amt > 0 && mult > 1) {
     amt = Math.round(amt * mult);
-    msg = `${G.weed > 0 ? '🌈' : '💸'} ×${mult.toFixed(mult % 1 ? 2 : 0)} +$${fmt(amt)}！`;
+    const bonusIcon = G.weed > 0 && G.heritage > 0 ? '🌈🎤' : G.weed > 0 ? '🌈' : G.heritage > 0 ? '🎤' : '💸';
+    msg = `${bonusIcon} ×${mult.toFixed(mult % 1 ? 2 : 0)} +$${fmt(amt)}！`;
     col = '#ffe066';
     size = Math.max(size, 21);
   }
@@ -921,12 +926,35 @@ function trapIn(o) {
   pop('歡迎光臨吸菸室～☁️', P.x, P.y - 110, '#ffd23f', 20);
 }
 
+function hitBystander(o) {
+  o.hit = true;
+  o.mode = 'flee';
+  o.vx = (o.x <= P.x ? -1 : 1) * rand(220, 300);
+  G.bystanderHits++;
+  G.inv = Math.max(G.inv, .65);
+  G.shake = Math.max(G.shake, .32);
+  sfx('hit');
+  if (Math.random() < .65 && G.money > 0) {
+    const choices = [100, 200, 300, 500];
+    const loss = Math.min(G.money, choices[Math.floor(Math.random() * choices.length)]);
+    G.money -= loss;
+    G.bystanderLoss += loss;
+    pop(`💸 被路人撞掉 $${fmt(loss)}！`, P.x, P.y - 105, '#ff8787', 21);
+    sprayBills(P.x, P.y - 10, loss >= 500 ? 12 : 8);
+  } else {
+    pop('💥 被路人撞歪！還好錢包沒掉', P.x, P.y - 105, '#ffd8a8', 17);
+  }
+}
+
 function spawnSmall(type, x) {
   let o;
   if (ITEMS[type]) o = { kind: 'item', w: ITEMS[type].w, h: ITEMS[type].h };
   else if (MONEY[type]) o = { kind: 'item', w: MONEY[type].w, h: MONEY[type].h };
   else if (type === 'cat') o = { kind: 'cat', w: 48, h: 42, sp: .88 };
-  else if (type === 'bystander') o = { kind: 'bystander', w: 38, h: 58, sp: .82, flee: false };
+  else if (type === 'bystander') {
+    const dir = Math.random() < .5 ? -1 : 1;
+    o = { kind: 'bystander', w: 38, h: 58, sp: .82, mode: 'wander', vx: dir * rand(30, 75), wanderT: rand(.5, 1.8), reacted: false, hit: false, heritageHeckled: false };
+  }
   else if (type === 'inspector') o = { kind: 'enemy', w: 44, h: 60, vx: (Math.random() < .5 ? -1 : 1) * rand(30, 70) };
   else if (type === 'police') o = { kind: 'enemy', w: 44, h: 60, chase: G.wanted > 0 ? 150 : 35, sp: 1.1 };
   else if (type === 'bucket') o = { kind: 'enemy', w: 42, h: 50 };
@@ -1106,24 +1134,45 @@ function update(dt) {
     if (o.dead) continue;
     if (G.trap && o === G.trap.o) { o.x = P.x; o.y = P.y - 14; continue; }
     o.y += G.speed * dt * (o.sp || 1);
-    if (o.kind === 'bystander' && !o.flee && G.good <= 0 && G.nic > 0
-      && Math.abs(o.y - P.y) < 230 && Math.abs(o.x - P.x) < 175) {
-      o.flee = true;
-      G.bystandersFled++;
-      const side = o.x === P.x ? (Math.random() < .5 ? -1 : 1) : Math.sign(o.x - P.x);
-      o.vx = side * rand(190, 260);
-      if (G.bystanderT <= 0) {
-        const warnings = G.heritage > 0
-          ? ['🏛️ 路人：古蹟不是吸菸室！', '路人：增國程，又是你？', '導覽員：別讓歷史只剩菸味！']
-          : ['😷 二手菸，離遠一點！', '咳咳…有人在抽菸！', '🚭 路人：先閃了！'];
-        pop(warnings[Math.floor(o.seed) % warnings.length], o.x, o.y - 48, '#e7f5ff', 16);
-        if (G.heritage > 0) G.heritageHeckles++;
-        G.bystanderT = 1.2;
+    if (o.kind === 'bystander') {
+      // 平常就在街上不規則橫跑，不再沿固定直線前進。
+      if (o.mode === 'wander' && (o.wanderT -= dt) <= 0) {
+        const dir = Math.random() < .5 ? -1 : 1;
+        o.vx = dir * rand(35, 95);
+        o.wanderT = rand(.45, 1.6);
+      }
+      const nearSmoker = G.good <= 0 && (G.nic > 0 || G.heritage > 0)
+        && Math.abs(o.y - P.y) < 230 && Math.abs(o.x - P.x) < 175;
+      if (!o.reacted && nearSmoker) {
+        o.reacted = true;
+        const side = o.x === P.x ? (Math.random() < .5 ? -1 : 1) : Math.sign(o.x - P.x);
+        if (Math.random() < .3) {
+          o.mode = 'charge';
+          o.vx = -side * rand(205, 275);
+          pop('💢 路人：不要一直噴二手菸！', o.x, o.y - 50, '#ffd8a8', 16);
+        } else {
+          o.mode = 'flee';
+          o.vx = side * rand(190, 270);
+          G.bystandersFled++;
+          if (G.bystanderT <= 0 && G.heritage <= 0) {
+            const warnings = ['😷 二手菸，離遠一點！', '咳咳…有人在抽菸！', '🚭 路人：先閃了！'];
+            pop(warnings[Math.floor(o.seed) % warnings.length], o.x, o.y - 48, '#e7f5ff', 16);
+            G.bystanderT = 1.2;
+          }
+        }
+      }
+      if (o.mode === 'charge') o.vx = Math.sign(P.x - o.x || 1) * rand(210, 280);
+      // 增國程出現時，包含原本就在路上的每位路人都會各自吐槽一次。
+      if (G.heritage > 0 && !o.heritageHeckled && o.y > 75 && o.y < H - 35) {
+        o.heritageHeckled = true;
+        G.heritageHeckles++;
+        const warnings = ['🏛️ 古蹟不是吸菸室！', '增國程，又是你？', '別讓歷史只剩菸味！', '很會賺也不能在這抽！'];
+        pop(warnings[Math.floor(o.seed) % warnings.length], o.x, o.y - 50, '#fff3bf', 15);
       }
     }
     if (o.vx) {
       o.x += o.vx * dt;
-      if (!(o.kind === 'bystander' && o.flee)) {
+      if (!(o.kind === 'bystander' && o.mode === 'flee')) {
         if (o.x < 50) { o.x = 50; o.vx *= -1; }
         if (o.x > W - 50) { o.x = W - 50; o.vx *= -1; }
       }
@@ -1171,6 +1220,10 @@ function update(dt) {
       continue;
     }
     if (G.trap) continue;
+    if (o.kind === 'bystander') {
+      if (o.mode === 'charge' && !o.hit && G.inv <= 0 && hitP(o, .68)) hitBystander(o);
+      continue;
+    }
     if (o.kind === 'special' && hitP(o, 0.7)) { o.dead = true; becomeGood(o); continue; }
     if (o.kind === 'cat' && hitP(o, 0.75)) { o.dead = true; collectCat(o); continue; }
     if (o.kind === 'item' && hitP(o)) {
@@ -1653,14 +1706,15 @@ function drawItem(type, x, y, s = 1, data = null) {
       label('水桶', 30, '#9fd3ff');
       break;
     case 'bystander': {
-      const seed = data?.seed || 0, fleeing = !!data?.flee;
-      const dir = Math.sign(data?.vx || 1), run = Math.sin(t * (fleeing ? 18 : 7) + seed);
+      const seed = data?.seed || 0, mode = data?.mode || 'wander';
+      const fleeing = mode === 'flee', charging = mode === 'charge', reacting = fleeing || charging;
+      const dir = Math.sign(data?.vx || 1), run = Math.sin(t * (reacting ? 18 : 10) + seed);
       const shirts = ['#4dabf7', '#845ef7', '#20c997', '#ff922b'];
       const shirt = shirts[Math.floor(seed) % shirts.length];
       ctx.save();
-      ctx.rotate(fleeing ? dir * .13 : 0);
+      ctx.rotate(fleeing ? dir * .13 : charging ? -dir * .11 : Math.sin(t * 3 + seed) * .035);
       // 影子與跑動中的腿
-      ctx.fillStyle = 'rgba(0,0,0,.24)'; ctx.beginPath(); ctx.ellipse(0, 29, fleeing ? 18 : 13, 4, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(0,0,0,.24)'; ctx.beginPath(); ctx.ellipse(0, 29, reacting ? 18 : 14, 4, 0, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = '#343a40'; ctx.lineWidth = 6; ctx.lineCap = 'round';
       ctx.beginPath(); ctx.moveTo(-5, 10); ctx.lineTo(-7 - run * 6, 27); ctx.moveTo(5, 10); ctx.lineTo(7 + run * 6, 27); ctx.stroke();
       // 上衣、揮動手臂
@@ -1676,7 +1730,13 @@ function drawItem(type, x, y, s = 1, data = null) {
       ctx.beginPath(); ctx.arc(0, -27, 12.5, Math.PI, 0); ctx.fill();
       if (Math.floor(seed) % 3 === 0) { ctx.fillRect(-12, -28, 24, 4); ctx.fillRect(-12, -28, 4, 8); }
       ctx.fillStyle = '#222';
-      if (fleeing) {
+      if (charging) {
+        ctx.strokeStyle = '#7f1d1d'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(-8, -27); ctx.lineTo(-2, -24); ctx.moveTo(8, -27); ctx.lineTo(2, -24); ctx.stroke();
+        ctx.fillStyle = '#222'; circle(-4.5, -23, 2); circle(4.5, -23, 2);
+        ctx.fillStyle = '#7f1d1d'; ctx.beginPath(); ctx.ellipse(0, -17, 4, 2.5, 0, 0, Math.PI * 2); ctx.fill();
+        txtS('💢', dir * -21, -44, 19, '#ff8787');
+      } else if (fleeing) {
         circle(-4.5, -24, 2.1); circle(4.5, -24, 2.1);
         ctx.fillStyle = '#7f1d1d'; ctx.beginPath(); ctx.ellipse(0, -17, 3.2, 4.3, 0, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = '#74c0fc';
@@ -1687,7 +1747,7 @@ function drawItem(type, x, y, s = 1, data = null) {
         ctx.strokeStyle = '#7a3d2b'; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.arc(0, -19, 3, .15, Math.PI - .15); ctx.stroke();
       }
       ctx.restore();
-      label(fleeing ? '逃離二手菸' : '路人', 38, fleeing ? '#e7f5ff' : '#dee2e6');
+      label(charging ? '衝撞中！' : fleeing ? '逃離二手菸' : '亂跑路人', 38, charging ? '#ffd8a8' : fleeing ? '#e7f5ff' : '#dee2e6');
       break;
     }
     case 'inspector':
@@ -2367,7 +2427,7 @@ function drawWorld() {
     ctx.fillRect(0, 0, W, H);
     txtS(`😇 懂事模式：不想抽菸 ${G.good.toFixed(1)}s`, W / 2, 150, 18, '#fff3bf');
   }
-  if (G.heritage > 0) txtS(`🎬 增國程演出中：只變外觀 ${G.heritage.toFixed(1)}s`, W / 2, 184, 17, '#ffe066');
+  if (G.heritage > 0) txtS(`🎬 增國程演出中：收入 ×2　${G.heritage.toFixed(1)}s`, W / 2, 184, 17, '#ffe066');
   if (G.inZone && !G.trap) txtS('⚠️ 禁菸區：在這裡抽菸會被罰！', W / 2, 115, 16, '#ffadad');
   if (G.inHeritage && G.heritage <= 0 && !G.trap) txtS('🏛️ 古蹟區：在這裡抽菸會變增國程', W / 2, 142, 15, '#ffe8cc');
   if (G.wanted > 0 && Math.floor(now() * 4) % 2) txtS('🚨 通緝中 🚨', W - 70, 115, 16, '#ff6b6b');
