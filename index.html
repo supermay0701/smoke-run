@@ -39,7 +39,7 @@
 
 // ====== 基本設定 ======
 const W = 450, H = 800;
-const GAME_VERSION = '1.1.0-beta.7';
+const GAME_VERSION = '1.1.0-beta.8';
 const FONT = '"Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif';
 const cv = document.getElementById('c');
 const ctx = cv.getContext('2d');
@@ -1977,39 +1977,39 @@ function drawCatPlayer(ti) {
 
 // 把肺泡放在玩家附近，排成由上往下破裂的單一直串。
 function drawAlveoliChain(damage) {
-  const cx = 29, y0 = H - 326, step = 28, count = 8;
-  const broken = damage > 0 ? Math.ceil(damage * count) : 0;
+  const cx = 29, y0 = H - 340, step = 12.5, clusters = 20;
+  // 20 串 × 每串 5 顆 = 100 顆；一顆直接代表 1%。
+  const damaged = clamp(Math.round(G.lung), 0, 100);
+  const scarred = clamp(Math.round(G.scar), 0, damaged);
   ctx.save();
   ctx.lineCap = 'round';
-  ctx.strokeStyle = `rgba(255,205,205,${.52 + damage * .28})`; ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.moveTo(cx, y0 - 24); ctx.lineTo(cx, y0 + step * (count - 1) + 9); ctx.stroke();
-  txtS('肺泡 ↓', cx + 2, y0 - 38, 11, damage > .55 ? '#ff8787' : '#ffc9c9');
+  ctx.strokeStyle = 'rgba(255,205,205,.72)'; ctx.lineWidth = 2.4;
+  ctx.beginPath(); ctx.moveTo(cx, y0 - 17); ctx.lineTo(cx, y0 + step * (clusters - 1) + 5); ctx.stroke();
+  txtS('100 顆肺泡 ↓', cx + 14, y0 - 29, 10, '#ffd6dc');
 
-  for (let i = 0; i < count; i++) {
-    const cy = y0 + i * step, branch = i % 2 ? 7 : -7, dead = i < broken;
-    const pulse = G.alveoliPop > 0 && i === Math.max(0, broken - 1) ? G.alveoliPop : 0;
-    ctx.strokeStyle = dead ? 'rgba(130,55,62,.8)' : 'rgba(255,205,205,.72)'; ctx.lineWidth = 2;
+  let index = 0;
+  for (let i = 0; i < clusters; i++) {
+    const cy = y0 + i * step, branch = i % 2 ? 5 : -5;
+    ctx.strokeStyle = 'rgba(255,205,205,.58)'; ctx.lineWidth = 1.4;
     ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + branch, cy); ctx.stroke();
-    const ax = cx + branch, r = dead ? 4.2 : 5.2 + pulse * 1.8;
-    const bubbles = [[0,0],[-5,-4],[5,-4],[-5,5],[5,5]];
+    const ax = cx + branch, bubbles = [[0,0],[-3,-2],[3,-2],[-3,3],[3,3]];
     for (const [dx, dy] of bubbles) {
-      ctx.fillStyle = dead ? `rgba(70,28,34,${.72 + damage * .2})` : `rgba(255,177,188,${.65 + damage * .2})`;
-      ctx.beginPath(); ctx.ellipse(ax + dx, cy + dy, r, dead ? 2.5 : r, dead ? .35 : 0, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = dead ? '#ff6b6b' : 'rgba(255,240,242,.9)'; ctx.lineWidth = 1; ctx.stroke();
+      const scar = index < scarred, hurt = !scar && index < damaged;
+      ctx.fillStyle = scar ? 'rgba(235,238,242,.96)' : hurt ? 'rgba(105,24,34,.95)' : 'rgba(255,185,196,.86)';
+      ctx.beginPath(); ctx.arc(ax + dx, cy + dy, scar ? 2.15 : hurt ? 2.05 : 2.25, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = scar ? '#495057' : hurt ? '#ff6b6b' : 'rgba(255,240,242,.95)'; ctx.lineWidth = .65; ctx.stroke();
+      index++;
     }
-    if (dead) {
-      ctx.strokeStyle = '#ff8787'; ctx.lineWidth = 1.2;
-      ctx.beginPath(); ctx.moveTo(ax - 8, cy - 8); ctx.lineTo(ax, cy); ctx.lineTo(ax + 8, cy - 8); ctx.moveTo(ax, cy); ctx.lineTo(ax - 2, cy + 8); ctx.stroke();
-    }
-    if (pulse > 0) {
-      ctx.strokeStyle = `rgba(255,80,80,${pulse})`; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(ax, cy, 13 + (1 - pulse) * 14, 0, Math.PI * 2); ctx.stroke();
+    if (G.alveoliPop > 0 && damaged > 0 && index - 5 <= damaged - 1 && damaged - 1 < index) {
+      ctx.strokeStyle = `rgba(255,80,80,${G.alveoliPop})`; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(ax, cy, 9 + (1 - G.alveoliPop) * 10, 0, Math.PI * 2); ctx.stroke();
     }
   }
   ctx.restore();
-  ctx.fillStyle = 'rgba(35,20,25,.76)'; rr(9, H - 105, 86, 25, 12); ctx.fill();
+  ctx.fillStyle = 'rgba(35,20,25,.8)'; rr(7, H - 88, 148, 25, 12); ctx.fill();
   ctx.strokeStyle = damage > .7 ? '#ff6b6b' : '#ffa8b5'; ctx.lineWidth = 1.5; ctx.stroke();
-  txt(`肺損 ${Math.round(G.lung)}%`, 52, H - 92, 12, damage > .7 ? '#ff8787' : '#ffc9c9');
+  txt(`肺損 ${damaged}%｜白疤 ${scarred}%`, 81, H - 75, 11, damage > .7 ? '#ff8787' : '#ffc9c9');
+  txt('● 白＝永久　● 紅＝可恢復', 81, H - 51, 9, '#f1f3f5');
 }
 
 // 肺損傷視覺：煙霧只沿著左右兩側緩慢累積，保留中央遊戲視野。
@@ -2124,6 +2124,56 @@ function drawZengGuoCheng() {
   ctx.restore();
 }
 
+function drawElderPlayer(ti, car) {
+  const x = P.x, y = P.y, gait = Math.sin(P.walk), good = G.good > 0;
+  const leftFootY = y + 26 - gait * 3, rightFootY = y + 26 + gait * 3;
+  const caneTipX = x + 34 + gait * 3, caneTipY = y + 29 - gait * 3;
+  const coat = good ? '#f8f9fa' : ti <= 1 ? '#756653' : ti >= 5 ? '#f1f3f5' : ti >= 4 ? '#212529' : '#506784';
+  ctx.save();
+  if (G.inv > 0 && !G.trap && Math.floor(G.t * 12) % 2 === 0) ctx.globalAlpha = .4;
+
+  if (!car) {
+    // 左腳和右手拐杖使用同一個 gait，相同時間向前、落地。
+    ctx.strokeStyle = ti <= 1 ? '#5f5548' : '#334155'; ctx.lineWidth = 8; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x - 7, y + 7); ctx.lineTo(x - 14, leftFootY); ctx.moveTo(x + 5, y + 8); ctx.lineTo(x + 8, rightFootY); ctx.stroke();
+    ctx.fillStyle = ti === 0 ? '#7c6248' : '#1f2937';
+    rr(x - 24, leftFootY - 3, 19, 7, 4); ctx.fill(); rr(x + 2, rightFootY - 3, 18, 7, 4); ctx.fill();
+  }
+
+  // 駝背外套：背部後凸，胸口與頭部向前。
+  ctx.fillStyle = coat; ctx.beginPath(); ctx.moveTo(x - 21, y - 18); ctx.quadraticCurveTo(x - 34, y - 8, x - 27, y + 11); ctx.lineTo(x - 13, y + 16); ctx.lineTo(x + 16, y + 15); ctx.lineTo(x + 17, y - 7); ctx.quadraticCurveTo(x + 4, y - 20, x - 21, y - 18); ctx.closePath(); ctx.fill();
+  if (ti <= 1 && !good) {
+    ctx.fillStyle = '#4d4035'; ctx.fillRect(x - 19, y - 1, 5, 4); ctx.fillRect(x + 5, y + 7, 6, 3);
+  }
+  ctx.fillStyle = good ? '#fff' : ti >= 4 ? '#fff' : '#f1f5f9';
+  ctx.beginPath(); ctx.moveTo(x - 1, y - 16); ctx.lineTo(x + 13, y - 8); ctx.lineTo(x + 3, y + 7); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = good ? '#e03131' : ti >= 4 ? '#ffd43b' : '#7950f2';
+  ctx.beginPath(); ctx.moveTo(x + 4, y - 11); ctx.lineTo(x + 10, y - 6); ctx.lineTo(x + 2, y + 10); ctx.lineTo(x - 3, y + 3); ctx.closePath(); ctx.fill();
+
+  // 老人頭使用系統彩色圖示，縮到遊戲尺寸仍保持完整輪廓。
+  emoji('👴', x + 7, y - 31, 35);
+  if (good) { ctx.strokeStyle = '#ffd43b'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.ellipse(x + 7, y - 52, 14, 4, 0, 0, Math.PI * 2); ctx.stroke(); }
+  if (ti >= 5 && !good) emoji('👑', x + 7, y - 55, 18);
+
+  // 左手自然垂下。
+  ctx.strokeStyle = coat; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(x - 19, y - 8); ctx.lineTo(x - 27, y + 7); ctx.stroke();
+  ctx.fillStyle = '#efb978'; circle(x - 28, y + 9, 4.5);
+
+  // 右臂彎曲，手掌握在把手與杖身交界；杖尖落在身體右前方。
+  if (!car) {
+    ctx.strokeStyle = coat; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(x + 13, y - 7); ctx.lineTo(x + 20, y - 1); ctx.lineTo(x + 25, y + 2); ctx.stroke();
+    ctx.strokeStyle = '#724522'; ctx.lineWidth = 4.5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x + 25, y + 2); ctx.lineTo(caneTipX, caneTipY); ctx.moveTo(x + 25, y + 2); ctx.quadraticCurveTo(x + 18, y - 4, x + 15, y + 1); ctx.stroke();
+    ctx.fillStyle = '#efb978'; circle(x + 25, y + 2, 4.6); ctx.fillStyle = '#3e2a20'; circle(caneTipX, caneTipY, 3.5);
+  }
+
+  if (!good && G.nic > 0) {
+    ctx.fillStyle = '#fffdf5'; ctx.fillRect(x + 18, y - 27, 13, 2.5);
+    ctx.fillStyle = '#ff5a1f'; ctx.fillRect(x + 31, y - 27, 2.5, 2.5);
+  }
+  ctx.restore();
+}
+
 function drawPlayer() {
   const ti = G.tier ?? tierOf(G.money);
   const car = ti === 6 && G.good <= 0;
@@ -2160,7 +2210,8 @@ function drawPlayer() {
       ctx.stroke();
     }
   }
-  if (G.char === 'punk' && !car && G.good <= 0) {
+  if (G.char === 'elder') drawElderPlayer(ti, car);
+  else if (G.char === 'punk' && !car && G.good <= 0) {
     // 流氓用誇張三七步前進：身體長期偏一邊，再隨步伐左右晃。
     const lean = .08 + Math.sin(P.walk * .55) * .12;
     ctx.save();
@@ -2473,10 +2524,11 @@ function drawHUD() {
   txt(`${TIERS[ti].icon} $${fmt(G.money)}`, W - 14, 20, 18, ti <= 1 ? '#ff6b6b' : ti >= 4 ? '#ffd43b' : '#8ce99a', 'right');
   bar(14, 40, '尼古丁', G.nic / 100, '#ff9f1c', G.nic < 20);
   bar(14, 66, '肺損傷', G.lung / 100, '#c1121f', G.lung > 75);
-  // 永久疤痕（深色、無法恢復）
+  // 永久疤痕用 X 光片般的白灰色覆蓋；其餘深紅區仍可逐步恢復。
   const bx = 70, bw = W - bx - 14;
   if (G.scar > 0.5) {
-    ctx.fillStyle = '#4a0a0f'; rr(bx, 66, Math.max(16, bw * G.scar / 100), 16, 8); ctx.fill();
+    ctx.fillStyle = '#e9ecef'; rr(bx, 66, Math.max(16, bw * G.scar / 100), 16, 8); ctx.fill();
+    ctx.strokeStyle = '#868e96'; ctx.lineWidth = 1; ctx.stroke();
   }
   const healing = G.sinceSmoke > CFG.lungDelay && G.lung > G.scar + 0.1;
   if (healing) txt('▼ 恢復中', bx + bw - 44, 74, 11, '#8ce99a', 'right');
