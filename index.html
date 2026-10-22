@@ -39,7 +39,7 @@
 
 // ====== 基本設定 ======
 const W = 450, H = 800;
-const GAME_VERSION = '1.1.0-beta.6';
+const GAME_VERSION = '1.1.0-beta.7';
 const FONT = '"Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif';
 const cv = document.getElementById('c');
 const ctx = cv.getContext('2d');
@@ -156,8 +156,8 @@ const CFG = {
 // 難度：以生涯爽度解鎖；startSpeed 只改變開局捲動速度，最高速度仍一致。
 const DIFFS = [
   { id: 'easy',   name: '小菸槍', icon: '🙂', d1: '初速較慢', d2: '適合先看懂所有機制', unlock: 0,     nic: 100, gain: 1,   decay: .8,  enemy: .75, money: 12000, startSpeed: .86, withdrawalShake: 1,   bystanderAttack: true,  color: '#2f9e44' },
-  { id: 'normal', name: '老菸槍', icon: '😤', d1: '初速 +10%', d2: '補充 -20%・免疫路人攻擊', unlock: 3000,  nic: 50,  gain: .8,  decay: 1,   enemy: 1,   money: 10000, startSpeed: 1.1, withdrawalShake: 1,   bystanderAttack: false, color: '#e67700' },
-  { id: 'hard',   name: '菸蟲',   icon: '🐛', d1: '初速 +20%', d2: '補充 -50%・戒斷晃動 +20%', unlock: 12000, nic: 0,   gain: .5,  decay: 1.25, enemy: 1.3, money: 8000,  startSpeed: 1.2, withdrawalShake: 1.2, bystanderAttack: true,  color: '#c92a2a' },
+  { id: 'normal', name: '老菸槍', icon: '😤', d1: '初速 100%', d2: '補充 -20%・免疫路人攻擊', unlock: 3000,  nic: 50,  gain: .8,  decay: 1,   enemy: 1,   money: 10000, startSpeed: 1,    withdrawalShake: 1,   bystanderAttack: false, color: '#e67700' },
+  { id: 'hard',   name: '菸蟲',   icon: '🐛', d1: '初速 115%', d2: '補充 -50%・戒斷晃動 +20%', unlock: 12000, nic: 0,   gain: .5,  decay: 1.25, enemy: 1.3, money: 8000,  startSpeed: 1.15, withdrawalShake: 1.2, bystanderAttack: true,  color: '#c92a2a' },
 ];
 let diffIdx = clamp(+(localStorage.getItem('smokerun_diff') ?? 0), 0, 2);
 
@@ -372,6 +372,8 @@ ACH.push(...[
   { id: 'youngMax', icon: '⚡', name: '青春全速', desc: '年輕人達到最高速度等級', c: g => g.char === 'young' && g.speedLv >= 5 },
   { id: 'elder60', icon: '👴', name: '老而彌堅', desc: '使用老人存活 60 秒', c: g => g.char === 'elder' && g.t >= 60 },
   { id: 'punkTycoon', icon: '💎', name: '流氓暴發戶', desc: '使用流氓把身家衝到 $100,000', c: g => g.char === 'punk' && g.maxMoney >= 100000 },
+  { id: 'punkRob1', icon: '🫴', name: '第一次收過路費', desc: '使用流氓搶劫 1 位路人', c: g => g.char === 'punk' && g.robberies >= 1 },
+  { id: 'punkRob10', icon: '💸', name: '這條街我罩的', desc: '使用流氓單局搶劫 10 位路人', c: g => g.char === 'punk' && g.robberies >= 10 },
   { id: 'allChars', icon: '🎭', name: '三種人生', desc: '三種角色都至少玩過一局', c: () => achDone.charYoung && achDone.charElder && achDone.charPunk },
   { id: 'heritageSmoke', icon: '🏛️', name: '古蹟留名', desc: '在古蹟區抽菸並變身增國程', c: g => g.heritageEvents >= 1 },
   { id: 'heritageHeckled', icon: '🗯️', name: '路人都認得你', desc: '增國程狀態被 3 位路人吐槽', c: g => g.heritageHeckles >= 3 },
@@ -387,13 +389,13 @@ const ACH_RANKS = {
 };
 const ACH_LEGENDARY = new Set(['quit', 'cig200', 't420', 'cat100', 'hard120', 'allChars']);
 const ACH_DIAMOND = new Set(['lungCancer', 'alveoliEnd', 'lungDisease', 'streetEnd', 'debtEnd', 'ticketEnd', 'rich', 'money150k', 'score8000', 'weed5', 'zone20', 'heal100', 'punkTycoon', 'unlockPunk', 'flee30']);
-const ACH_GOLD = new Set(['cig100', 't180', 't240', 't300', 'hard60', 'score5000', 'money75k', 'fine20k', 'healthy10', 'zone10', 'cat30', 'cat50', 'jail', 'elder60', 'youngMax', 'heritageRepeat']);
+const ACH_GOLD = new Set(['cig100', 't180', 't240', 't300', 'hard60', 'score5000', 'money75k', 'fine20k', 'healthy10', 'zone10', 'cat30', 'cat50', 'jail', 'elder60', 'youngMax', 'heritageRepeat', 'punkRob10']);
 const ACH_SILVER = new Set(['cig25', 'cig50', 'score2000', 'score3k', 't90', 't120', 'money30k', 'earn10k', 'hosp3', 'hosp5', 'heal50', 'zone5', 'zoneStreak5', 'cat10', 'cat20', 'weed3', 'flee10', 'unlockElder', 'unlockHard', 'heritageHeckled']);
 ACH.forEach(a => {
   a.rank = ACH_LEGENDARY.has(a.id) ? 'legendary' : ACH_DIAMOND.has(a.id) ? 'diamond' : ACH_GOLD.has(a.id) ? 'gold' : ACH_SILVER.has(a.id) ? 'silver' : 'bronze';
   a.points = ACH_RANKS[a.rank].points;
 });
-if (ACH.length !== 120) throw new Error(`成就數量錯誤：${ACH.length}`);
+if (ACH.length !== 122) throw new Error(`成就數量錯誤：${ACH.length}`);
 let achDone = {};
 try { achDone = JSON.parse(localStorage.getItem('smokerun_ach') || '{}') || {}; } catch (e) {}
 let plays = +(localStorage.getItem('smokerun_plays') || 0);
@@ -465,7 +467,7 @@ function newGame() {
     objs: [], pops: [], parts: [],
     spawnT: 0.6, lastCig: 0, cd: { zone: 5, heritage: 16, room: 9, gate: 12, tung: CFG.goodStart, hosp: CFG.hospStart },
     wanted: 0, inv: 0, shake: 0, trap: null, inZone: false,
-    quitT: 0, smokeT: 0, coughT: 3, bystanderT: 0, bystandersFled: 0, bystanderHits: 0, bystanderLoss: 0,
+    quitT: 0, smokeT: 0, coughT: 3, bystanderT: 0, bystandersFled: 0, bystanderHits: 0, bystanderLoss: 0, robberies: 0, robberyMoney: 0,
     over: null, overT: 0, ending: null, satire: '', healthFact: '', careerGain: 0, newChars: [], newDiffs: [],
   };
   P = { x: W / 2, tx: W / 2, y: H - 150, w: 34, h: 52, walk: 0 };
@@ -957,6 +959,25 @@ function hitBystander(o) {
   }
 }
 
+function robBystander(o) {
+  o.robbed = true;
+  o.reacted = true;
+  o.mode = 'flee';
+  o.vx = (o.x <= P.x ? -1 : 1) * rand(260, 330);
+  G.bystandersFled++;
+  G.robberies++;
+  const choices = [200, 300, 500, 800];
+  const base = choices[Math.floor(Math.random() * choices.length)];
+  const gain = Math.round(base * incomeMult());
+  G.money += gain;
+  G.earned += gain;
+  G.robberyMoney += gain;
+  G.shake = Math.max(G.shake, .16);
+  pop(`🕺 流氓搶劫路人 +$${fmt(gain)}`, P.x, P.y - 105, '#ffe066', 20);
+  sprayBills(o.x, o.y - 8, gain >= 800 ? 12 : 8);
+  sfx('money');
+}
+
 function spawnSmall(type, x) {
   let o;
   if (ITEMS[type]) o = { kind: 'item', w: ITEMS[type].w, h: ITEMS[type].h };
@@ -1232,7 +1253,8 @@ function update(dt) {
     }
     if (G.trap) continue;
     if (o.kind === 'bystander') {
-      if (o.mode === 'charge' && !o.hit && G.inv <= 0 && hitP(o, .68)) hitBystander(o);
+      if (CHARS[charIdx].id === 'punk' && o.mode !== 'charge' && !o.robbed && hitP(o, .72)) robBystander(o);
+      else if (o.mode === 'charge' && !o.hit && G.inv <= 0 && hitP(o, .68)) hitBystander(o);
       continue;
     }
     if (o.kind === 'special' && hitP(o, 0.7)) { o.dead = true; becomeGood(o); continue; }
