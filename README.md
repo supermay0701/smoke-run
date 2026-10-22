@@ -30,7 +30,7 @@
 ## 技術
 單一 `index.html`，純 HTML5 Canvas + JavaScript，不需要任何安裝或建置。背景音樂與碰撞音效使用 Web Audio 即時合成，不含外部音樂檔。
 
-排行榜使用 Cloudflare Worker + D1，API 為 <https://smoke-run-api.smoke-run-level-api.workers.dev>；遊戲頁仍部署在 GitHub Pages。維護方式見 [`worker/README.md`](worker/README.md)。
+排行榜使用 Cloudflare Worker + D1，API 為 <https://smoke-run-api.may-create.workers.dev>；遊戲頁仍部署在 GitHub Pages。維護方式見 [`worker/README.md`](worker/README.md)。
 
 ---
 

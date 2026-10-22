@@ -490,7 +490,7 @@ function startGame() {
 // 本機預覽連到 wrangler dev；GitHub Pages 連到正式 Worker。
 const LB = {
   local: 'http://127.0.0.1:8787',
-  production: 'https://smoke-run-api.smoke-run-level-api.workers.dev',
+  production: 'https://smoke-run-api.may-create.workers.dev',
 };
 const localLB = location.hostname === '127.0.0.1' || location.hostname === 'localhost';
 const lbUrl = () => (localLB ? LB.local : LB.production).replace(/\/$/, '');

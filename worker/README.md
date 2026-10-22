@@ -2,7 +2,7 @@
 
 遊戲前端仍放在 GitHub Pages；這個 Worker 只負責排行榜 API，資料儲存在 Cloudflare D1。
 
-正式 API：<https://smoke-run-api.smoke-run-level-api.workers.dev>
+正式 API：<https://smoke-run-api.may-create.workers.dev>
 
 ## 本機執行
 
@@ -19,7 +19,7 @@ Worker 預設在 `http://127.0.0.1:8787`，遊戲頁在本機會自動使用這�
 
 - Worker：`smoke-run-api`
 - D1：`smoke-run-db`（APAC）
-- workers.dev 子網域：`smoke-run-level-api`
+- workers.dev 子網域：`may-create`
 
 後續更新 Worker：
 
